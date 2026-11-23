@@ -1,0 +1,22 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scripts/damage_number.gd" id="1_num"]
+
+[sub_resource type="SystemFont" id="Font_num"]
+font_names = PackedStringArray("Rajdhani", "Exo 2", "Barlow", "Inter", "Arial", "sans-serif")
+font_italic = true
+font_weight = 800
+
+[node name="DamageNumber" type="Label3D"]
+pixel_size = 0.0075
+billboard = 1
+no_depth_test = true
+render_priority = 20
+outline_render_priority = 19
+modulate = Color(0.95, 0.97, 0.98, 1)
+outline_modulate = Color(0.06, 0.02, 0.1, 1)
+text = "12"
+font = SubResource("Font_num")
+font_size = 64
+outline_size = 16
+script = ExtResource("1_num")
