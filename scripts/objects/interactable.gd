@@ -44,6 +44,7 @@ func set_enabled(v: bool) -> void:
 
 func use(by: Node) -> void:
 	if enabled:
+		Audio.play(&"switch")
 		used.emit(by)
 
 

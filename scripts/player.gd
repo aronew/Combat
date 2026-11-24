@@ -182,6 +182,7 @@ var _streak_mat: ShaderMaterial
 var _streak_t := 0.0
 var _assist_ray := PhysicsRayQueryParameters3D.new()
 const SWING_TIME := 0.13
+const SHOT_SOUNDS := {"rifle": &"rifle_shot", "smg": &"smg_shot", "shotgun": &"scattergun_shot", "railgun": &"rail_shot", "launcher": &"launcher_shot"}
 ## Run stats (read by the autoplay bot).
 var stat_strikes := 0
 var stat_counters := 0
@@ -436,6 +437,8 @@ func _update_shooting() -> void:
 			rail.color = Color("e6f6ff")
 			rail.scale = 2.2
 			Game.projectiles.fire(origin, shot_dir, 110.0, 0.5, rail)
+			Audio.play(&"rail_shot", -4.0)
+	Audio.play(SHOT_SOUNDS.get(String(gun_item.get("archetype", "rifle")), &"rifle_shot"))
 	_recoil = minf(_recoil + 0.35 + float(gun.shake) * 5.0, 1.6)
 	_gun_kick = minf(_gun_kick + 0.6 + float(gun.shake) * 4.0, 1.6)
 	var fl: Array = FLASH.get(String(gun.get("code", "AR")), FLASH.AR)
@@ -577,6 +580,7 @@ func _start_strike(target: Enemy, dir: Vector3, dist: float) -> void:
 	_face_dir = dir
 	_ghost_t = 0.0
 	_blade_cd = _strike_t + 0.02
+	Audio.play(&"dash_strike")
 	if Game.fx:
 		Game.fx.on_player_dash(global_position)
 
@@ -620,6 +624,11 @@ func _swing(dir: Vector3) -> void:
 	var dmg := (blade_finisher_damage if finisher else blade_damage) * chain_mult
 	_show_slash(finisher, dir)
 	_start_swing_anim(finisher)
+	var cleaver := String(blade_item.get("archetype", "mono")) == "cleaver"
+	if finisher:
+		Audio.play(&"blade_finisher", 0.0, 0.85 if cleaver else 1.0)
+	else:
+		Audio.play(&"cleaver_swing" if cleaver else &"blade_swing", 0.0, 1.0 + (_combo_step - 1) * 0.05)
 
 	var cos_half := cos(deg_to_rad(arc * 0.5))
 	var hits := 0
@@ -958,6 +967,7 @@ func _start_dash(wish: Vector3) -> void:
 	_dash_dir = wish.normalized() if wish.length_squared() > 0.01 else aim_dir
 	_dash_t = dash_duration
 	_dash_cd = dash_cooldown
+	Audio.play(&"roll")
 	_invuln = maxf(_invuln, dash_duration + dash_invincibility_extra)
 	_ghost_t = 0.0
 	if Profile.has_legendary("bulwark"):

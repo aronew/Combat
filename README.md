@@ -189,6 +189,23 @@ screen: W is up-screen. The map is rotated to match.
 | Close a Rig panel | Esc or E | |
 | Fullscreen | F11 | |
 | Graphics quality HIGH / MEDIUM / LOW (saved) | V | |
+| Volume down / up (saved; all the way down mutes) | - / = | |
+
+### Sound
+Everything goes through the `Audio` autoload (`scripts/audio.gd`). The sounds are in
+`assets/audio/sfx` as `<name>_<n>.mp3`, made with ElevenLabs sound effects. All the takes of one
+name form a bank: one is picked at random each time (never the same twice in a row), with a
+little pitch jitter. To add variety, drop in another take (e.g. `rifle_shot_5.mp3`) and it is
+picked up automatically.
+
+- World sounds are positioned: you hear bugs to your left on the left, and quiet ones fade out
+  with distance. The listener sits on the player, turned with the camera.
+- Each place has its own ambience: the Rig, Deepworks (machinery + abyss wind, hive floors,
+  reactor core), the Derelict Hauler (starship hull) and the Furnace Chasm (furnace + lava).
+- Loops: the station alarm, the uplink, low health, laser fences, feeding bugs, burrow mounds,
+  and skittering when a pack is closing in.
+- The mix (volume, voices at once, pitch jitter, audible range) for every sound is the `MIX`
+  table at the top of `audio.gd`.
 
 ### Low-end machines (Chromebooks, integrated GPUs)
 Press **V** until the corner reads **LOW**. That turns off volumetric fog, SSAO, glow, shadows
@@ -218,11 +235,12 @@ scripts/
   hub/           hub_level.gd (the Rig)
   ui/            hud + widgets (alert meter, minimap, objective marker, boss bar, ...)
   shaders/
-  game.gd + profile.gd (autoloads), mission.gd, hive_director.gd, spawner.gd, player.gd, fx.gd, pickups.gd
+  game.gd + profile.gd + graphics.gd + audio.gd (autoloads), mission.gd, hive_director.gd, spawner.gd, player.gd, fx.gd, pickups.gd
 tests/           test_loot.gd (items/stats/save), test_hub.gd (stations, every weapon on the range, deploy),
-                 test_complex.gd (generates hundreds of floors: reachability, placements, sizes)
+                 test_complex.gd (generates hundreds of floors: reachability, placements, sizes),
+                 test_audio.gd (every sound the code plays exists, every file is used, loops loop)
 ui/              hud.tscn
-assets/          models (.glb from art_src/) and shared materials
+assets/          models (.glb from art_src/), shared materials, audio/sfx (sound banks)
 art_src/         Blender Python scripts that build the models
 assets/models/   enemies/ (rigged bugs) and props/ (set dressing), exported from art_src/blender
 art_src/blender/ Blender Python scripts that build the models (see art_src/README.md)
@@ -279,4 +297,8 @@ godot --headless --path . --script res://tests/test_hub.gd
 
 ```bash
 godot --headless --path . --script res://tests/test_complex.gd
+```
+
+```bash
+godot --headless --path . --script res://tests/test_audio.gd
 ```

@@ -40,3 +40,20 @@ func _speed_factor(dir: Vector3) -> float:
 	if _detour_t > 0.0:
 		return 0.8  # working round an obstacle: allowed to shuffle sideways
 	return clampf(get_facing().dot(dir), 0.3, 1.0)
+
+
+var _step_t := 0.0
+
+
+func _alert_sound() -> StringName:
+	return &"shield_roar"
+
+
+## Heavy footfalls while it advances.
+func _custom_tick(delta: float) -> bool:
+	if state == State.CHASE and Vector2(velocity.x, velocity.z).length() > 0.6:
+		_step_t -= delta
+		if _step_t <= 0.0:
+			_step_t = 0.55
+			Audio.play_at(&"shield_step", global_position, 0.0, 1.0 / sqrt(_tier_scale))
+	return false

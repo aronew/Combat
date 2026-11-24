@@ -57,9 +57,19 @@ func arm() -> void:
 		_set_mode(Mode.WARMUP)
 
 
+var _hum: AudioStreamPlayer3D
+
+
 func _set_mode(m: Mode) -> void:
 	mode = m
 	_t = 0.0
+	if m == Mode.WARMUP:
+		Audio.play_at(&"laser_arm", global_position)
+	if m == Mode.ON and _hum == null:
+		_hum = Audio.attach_loop(self, &"laser_hum", 0.0, Vector3.UP * 0.8)
+	elif m != Mode.ON and _hum:
+		_hum.queue_free()
+		_hum = null
 	_tick_t = 0.0
 	for b in _beams:
 		b.visible = m == Mode.ON or m == Mode.WARMUP
@@ -102,13 +112,15 @@ func _zap() -> void:
 		for e in Game.spawner.enemies_on_segment(a, b, 0.2):
 			var side := signf((e.global_position - global_position).dot(across))
 			e.take_hit(enemy_damage_per_tick, across * (side if side != 0.0 else 1.0), 3.0, Game.TEAM_NEUTRAL, &"laser")
+			Audio.play_at(&"laser_zap", e.global_position)
 			if Game.fx:
 				Game.fx.spark(e.global_position + Vector3.UP * 0.5, beam_color, Vector3.UP)
 	var p := Game.player
 	if p and p.alive:
 		var q := Geometry3D.get_closest_point_to_segment(Vector3(p.global_position.x, 0, p.global_position.z), Vector3(a.x, 0, a.z), Vector3(b.x, 0, b.z))
 		if q.distance_to(Vector3(p.global_position.x, 0, p.global_position.z)) < 0.45:
-			p.take_damage(player_damage, q)
+			if p.take_damage(player_damage, q):
+				Audio.play(&"laser_zap")
 
 
 func _box(size: Vector3, pos: Vector3, mat: Material) -> MeshInstance3D:
