@@ -108,6 +108,7 @@ func drop_item(pos: Vector3, item: Dictionary) -> void:
 	var p := Game.level.clamp_to_walkable(pos, 0.6) if Game.level else pos
 	d.position = Vector3(p.x, 0.0, p.z)
 	add_child(d)
+	Audio.play_at([&"loot_drop_common", &"loot_drop_rare", &"loot_drop_epic", &"loot_drop_legendary"][clampi(int(item.get("rarity", 0)), 0, 3)], d.position)
 
 
 func _process(delta: float) -> void:
@@ -149,7 +150,9 @@ func _collect(i: int) -> void:
 	_active[i] = false
 	_nodes[i].visible = false
 	if _kind[i] == 1:
+		Audio.play(&"heal_orb")
 		if Game.player:
 			Game.player.heal(_value[i])
 	elif Game.mission:
+		Audio.play(&"salvage_pickup")
 		Game.mission.add_haul(_value[i])

@@ -63,6 +63,7 @@ func close() -> void:
 		return
 	mode = Mode.CLOSING
 	_t = 0.0
+	Audio.play_at(&"blast_door_close", global_position)
 	_shape.set_deferred("disabled", false)
 	_red_mat.emission_energy_multiplier = 5.0
 	_update_switch()
@@ -84,6 +85,7 @@ func _physics_process(delta: float) -> void:
 			if _t >= close_time:
 				mode = Mode.OPENING
 				_t = 0.0
+				Audio.play_at(&"blast_door_open", global_position)
 		Mode.OPENING:
 			var k := clampf(_t / 0.8, 0.0, 1.0)
 			_slab.position.y = lerpf(height * 0.5, height * 1.5, k)

@@ -26,6 +26,7 @@ func _attack_tick(player: Player, _delta: float) -> void:
 	if d.length() < trigger_range * _tier_scale:
 		_fuse = fuse_time
 		play_anim_oneshot(&"swell")
+		Audio.play_at(&"burster_swell", global_position, 0.0, 1.0 / _tier_scale)
 
 
 func _custom_tick(delta: float) -> bool:
@@ -43,6 +44,7 @@ func _custom_tick(delta: float) -> bool:
 
 func _detonate() -> void:
 	var pos := global_position + Vector3.UP * 0.4
+	Audio.play_at(&"burster_pop", pos)
 	Game.explode(pos, blast_radius * _tier_scale, blast_enemy_damage * damage_mult, blast_player_damage * damage_mult,
 			blast_knockback, self, 2.2 * _tier_scale)
 	_die(Vector3.ZERO, &"self")
@@ -51,5 +53,6 @@ func _detonate() -> void:
 func _on_death(_direction: Vector3, kind: StringName) -> void:
 	if kind == &"self":
 		return
+	Audio.play_at(&"burster_pop", global_position)
 	Game.delayed_explode(0.12, global_position + Vector3.UP * 0.4, blast_radius * _tier_scale,
 			blast_enemy_damage * damage_mult, blast_player_damage * damage_mult, blast_knockback, null, 2.2 * _tier_scale)

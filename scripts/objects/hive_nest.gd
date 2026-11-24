@@ -95,6 +95,7 @@ func take_hit(damage: float, _direction: Vector3, _knockback: float, _team: int,
 		return 0.0
 	health -= damage
 	_flash = 1.0
+	Audio.play_at(&"nest_hit", global_position)
 	if Game.fx:
 		Game.fx.spark(global_position + Vector3.UP * 0.8, Color("8dff2e"), Vector3.UP)
 	if health <= 0.0:
@@ -108,6 +109,7 @@ func _destroy() -> void:
 	for p in _pods:
 		p.visible = false
 	_light.light_energy = 0.0
+	Audio.play_at(&"nest_destroyed", global_position)
 	if Game.fx:
 		Game.fx.burst(global_position + Vector3.UP * 0.6, Vector3.ZERO, 2.0)
 		Game.fx.damage_number(global_position + Vector3.UP * 2.0, "NEST DESTROYED", Color("8dff2e"), 1.1)

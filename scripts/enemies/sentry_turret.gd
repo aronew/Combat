@@ -40,6 +40,13 @@ func _ready() -> void:
 	_beam_ray.exclude = [get_rid()]
 
 
+var _locked := false
+
+
+func _alert_sound() -> StringName:
+	return &"turret_wake"
+
+
 func _on_spawned() -> void:
 	speed = 0.0
 	_cd = 1.0
@@ -84,10 +91,15 @@ func _custom_tick(delta: float) -> bool:
 		if _cd <= 0.0 and to.length() < beam_range and _has_line_of_sight(p.global_position):
 			_charge = charge_time
 			_aim = to.normalized()
+			Audio.play_at(&"turret_charge", global_position)
+			_locked = false
 	else:
 		_charge -= delta
 		if _charge > lock_time and to.length_squared() > 0.01:
 			_aim = _aim.slerp(to.normalized(), clampf(10.0 * delta, 0.0, 1.0)).normalized()
+		elif not _locked:
+			_locked = true
+			Audio.play_at(&"turret_lock", global_position)
 		_turn_head(_aim, delta * 3.0)
 		_update_telegraph()
 		if _charge <= 0.0:
@@ -136,6 +148,7 @@ func _fire() -> void:
 	_place_line(beam, origin, end)
 	beam.visible = true
 	_beam_t = 0.2
+	Audio.play_at(&"turret_beam", origin)
 	beam_mat.set_shader_parameter("fade", 1.0)
 	Game.shake(0.12)
 	if Game.director:
@@ -155,6 +168,7 @@ func _fire() -> void:
 		if q.distance_to(pp) < beam_width:
 			if p.is_parrying_toward(global_position):
 				take_hit(reflect_damage, -_aim, 0.0, Game.TEAM_PLAYER, &"reflect")
+				Audio.play(&"parry")
 				if Game.fx:
 					Game.fx.text_popup(p.global_position + Vector3.UP * 2.0, "PARRY!", Color("19f4ff"), 1.3)
 				Game.hitstop(0.09)

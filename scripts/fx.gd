@@ -106,14 +106,21 @@ func on_player_dash(_pos: Vector3) -> void:
 
 func on_projectile_hit(pos: Vector3, direction: Vector3) -> void:
 	spark(pos, shot_spark_color, -direction)
+	Audio.play_at(&"impact_bug", pos)
 
 
 func on_wall_hit(pos: Vector3, normal: Vector3) -> void:
 	spark(pos, wall_spark_color, normal)
+	Audio.play_at(&"impact_metal", pos)
 
 
 func on_enemy_hit(pos: Vector3, damage: float, killed: bool, kind: StringName = &"bullet") -> void:
 	Game.shake(shake_on_hit)
+	match kind:
+		&"slash", &"slash_crit":
+			Audio.play_at(&"blade_hit", pos, 2.0 if kind == &"slash_crit" else 0.0)
+		&"counter":
+			Audio.play(&"counter")
 	if not damage_numbers_enabled:
 		return
 	var col := kill_number_color if killed else number_color
@@ -141,6 +148,7 @@ func on_enemy_hit(pos: Vector3, damage: float, killed: bool, kind: StringName = 
 func status_pop(pos: Vector3, kind: StringName) -> void:
 	var c: Color = {&"burn": Color("ff7a1a"), &"cryo": Color("9fe8ff"), &"corrode": Color("b6ff3d")}.get(kind, Color.WHITE)
 	spark(pos, c, Vector3.UP)
+	Audio.play_at(kind, pos)
 	var now := Time.get_ticks_usec()
 	if now - _last_status_usec > 400000:
 		_last_status_usec = now
@@ -151,6 +159,7 @@ func status_pop(pos: Vector3, kind: StringName) -> void:
 
 ## Shock arc between two points (pooled, flickers out in ~0.15 s).
 func lightning(a: Vector3, b: Vector3) -> void:
+	Audio.play_at(&"shock", b)
 	var idx := _bolt_i
 	var l: Array = _bolts[idx]
 	_bolt_i = (_bolt_i + 1) % _bolts.size()
@@ -169,9 +178,11 @@ func lightning(a: Vector3, b: Vector3) -> void:
 
 func on_enemy_killed(pos: Vector3, direction: Vector3, tier := 0, silent := false) -> void:
 	if silent:
+		Audio.play_at(&"silent_kill", pos)
 		burst(pos, direction, 0.6, Color("19f4ff"))
 		text_popup(pos + Vector3.UP * 1.4, "SILENT KILL", Color("19f4ff"), 0.9)
 		return
+	Audio.play_at(&"bug_death", pos, tier * 2.0, 1.0 - tier * 0.08)
 	var size := 1.0 + tier * 0.35
 	var ring: Color = Enemy.TIER_COLORS[tier] if tier > 0 else Color(0, 0, 0, 0)
 	burst(pos, direction, size, ring)
@@ -183,6 +194,7 @@ func on_enemy_killed(pos: Vector3, direction: Vector3, tier := 0, silent := fals
 
 
 func on_enemy_land(pos: Vector3, heavy: bool) -> void:
+	Audio.play_at(&"bug_land", pos, 4.0 if heavy else 0.0, 0.8 if heavy else 1.0)
 	if heavy:
 		spark(pos + Vector3.UP * 0.1, Color("c9cfd4"), Vector3.UP)
 		Game.shake(0.06)
@@ -191,6 +203,7 @@ func on_enemy_land(pos: Vector3, heavy: bool) -> void:
 
 
 func on_blocked(pos: Vector3, direction: Vector3) -> void:
+	Audio.play_at(&"shield_block", pos)
 	spark(pos, Color("3aa0ff"), -direction)
 	var now := Time.get_ticks_usec()
 	if now - _last_block_usec > 600000:
@@ -200,6 +213,7 @@ func on_blocked(pos: Vector3, direction: Vector3) -> void:
 
 ## Big fiery blast with a light flash (barrels, bursters).
 func explosion(pos: Vector3, size := 2.0) -> void:
+	Audio.play_at(&"explosion", pos, clampf((size - 2.0) * 2.0, -6.0, 3.0))
 	burst(pos, Vector3.ZERO, size, Color("ff8a1e"), true)
 	if Graphics.is_low():
 		return  # point lights are the expensive part on weak GPUs
@@ -218,6 +232,7 @@ func text_popup(pos: Vector3, text: String, color: Color, scale_mult := 1.0) -> 
 ## Ground warning before a spawn: pulsing green cracks (burrow) or a growing
 ## shadow with a red ring (drop from above).
 func telegraph(mode: StringName, pos: Vector3, time: float, tier := 0) -> void:
+	Audio.play_at(&"ground_crack_warning" if mode == &"burrow" else &"drop_warning", pos)
 	var t: Dictionary = _tele[_tele_i]
 	_tele_i = (_tele_i + 1) % _tele.size()
 	t.mode = mode
@@ -336,6 +351,8 @@ func on_player_hit(pos: Vector3, _amount: float) -> void:
 
 
 func on_player_death(pos: Vector3) -> void:
+	Audio.set_loop(&"low_health", false, 0.2)
+	Audio.play(&"death")
 	Game.shake(1.0)
 	Game.hitstop(hitstop_on_player_death, hitstop_time_scale)
 	for i in 4:

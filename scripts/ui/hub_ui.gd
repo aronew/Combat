@@ -101,6 +101,7 @@ func _unhandled_input(event: InputEvent) -> void:
 func open(kind: String) -> void:
 	close()
 	open_panel = kind
+	Audio.play(&"ui_panel")
 	if Game.player:
 		Game.player.input_locked = true
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
@@ -453,12 +454,14 @@ func _on_filter(f: String) -> void:
 
 func _on_equip(item: Dictionary) -> void:
 	Profile.equip(item.id)
+	Audio.play(&"equip")
 	selected = {"source": "equipped", "item": item, "slot": item.slot}
 	_rebuild_open()
 
 
 func _on_scrap(id: String) -> void:
 	Profile.scrap(id)
+	Audio.play(&"scrap")
 	selected = {}
 	_rebuild_open()
 
@@ -471,17 +474,21 @@ func _on_unequip(slot: String) -> void:
 
 func _on_buy(id: String) -> void:
 	last_crate = Profile.buy_crate(id)
+	if not last_crate.is_empty():
+		Audio.play(&"crate_legendary" if int(last_crate.get("rarity", 0)) >= 3 else &"crate_open")
 	_rebuild_open()
 
 
 func _on_crate_equip(id: String) -> void:
 	Profile.equip(id)
+	Audio.play(&"equip")
 	last_crate = {}
 	_rebuild_open()
 
 
 func _on_perk(id: String) -> void:
-	Profile.upgrade_perk(id)
+	if Profile.upgrade_perk(id):
+		Audio.play(&"perk_unlock")
 	_rebuild_open()
 
 
@@ -638,5 +645,9 @@ func _btn(text: String, callback: Callable, min_size := Vector2.ZERO) -> Button:
 	var b := Button.new()
 	b.text = text
 	b.custom_minimum_size = min_size
+	b.pressed.connect(func(): Audio.play(&"ui_click"))
 	b.pressed.connect(callback)
+	b.mouse_entered.connect(func():
+		if not b.disabled:
+			Audio.play(&"ui_hover"))
 	return b

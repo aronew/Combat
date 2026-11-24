@@ -130,6 +130,7 @@ func _on_breaker_used(_by: Node, b: Interactable) -> void:
 		return
 	b.set_enabled(false)
 	_breakers_on += 1
+	Audio.play_at(&"breaker_on", b.global_position)
 	Game.shake(0.25)
 	if Game.fx:
 		Game.fx.text_popup(b.global_position + Vector3.UP * 2.0, "POWER ON", Color("ffd23d"), 1.1)
@@ -235,6 +236,7 @@ func _on_uplink_used(_by: Node) -> void:
 	if phase != Phase.INFILTRATE:
 		return
 	phase = Phase.UPLOAD
+	Audio.play(&"terminal_use")
 	Game.level.uplink.set_enabled(false)
 	if Game.director:
 		Game.director.start_alarm()
