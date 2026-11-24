@@ -11,7 +11,7 @@ extends Enemy
 @export var fire_interval := 2.4
 @export var charge_time := 0.95
 @export var lock_time := 0.3
-@export var beam_player_damage := 26.0
+@export var beam_player_damage := 20.0
 @export var beam_bug_damage := 60.0
 @export var beam_width := 0.55
 @export var reflect_damage := 260.0

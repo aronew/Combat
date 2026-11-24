@@ -14,8 +14,8 @@ enum Tier { NORMAL, BLUE, GOLD, PURPLE }
 
 const TIER_COLORS := [Color(1, 1, 1, 0), Color("3aa0ff"), Color("ffc23d"), Color("b04dff")]
 const TIER_LABELS := ["", "VETERAN", "CHAMPION", "ELITE"]
-const TIER_HEALTH := [1.0, 2.2, 4.0, 14.0]
-const TIER_DAMAGE := [1.0, 1.25, 1.5, 1.8]
+const TIER_HEALTH := [1.0, 2.0, 3.5, 10.0]
+const TIER_DAMAGE := [1.0, 1.2, 1.4, 1.6]
 const TIER_SPEED := [1.0, 1.05, 1.1, 1.1]
 const TIER_SCALE := [1.0, 1.12, 1.25, 1.65]
 const TIER_SALVAGE := [1, 3, 6, 30]
@@ -27,8 +27,17 @@ const TIER_SALVAGE := [1, 3, 6, 30]
 @export_group("Stats")
 @export var base_health := 30.0
 @export var base_speed := 5.2
-@export var contact_damage := 9.0
+@export var contact_damage := 7.0
 @export var contact_range := 0.85
+## Bites are telegraphed: the bug slows, swells and rears up for this long,
+## then lunges. It only connects if you're still within reach, so keep moving.
+@export var bite_windup := 0.32
+## Pause between bites from the same bug.
+@export var bite_recover := 0.7
+## Reach multiplier for the lunge at the end of the wind-up.
+@export var bite_reach_mult := 1.3
+## Move speed multiplier while winding up.
+@export var bite_windup_speed := 0.25
 @export var radius := 0.4
 @export_range(0.0, 1.0) var knockback_resistance := 0.0
 @export var salvage := 1
@@ -100,6 +109,8 @@ var _burn_tick := 0.0
 var _cryo_t := 0.0
 var _corrode_t := 0.0
 var _status_fx_t := 0.0
+var _bite_t := -1.0
+var _bite_cd := 0.0
 
 static var _aura_mats := {}
 
@@ -189,6 +200,8 @@ func _activate(health_mult: float, speed_mult: float) -> void:
 	_burn_t = 0.0
 	_cryo_t = 0.0
 	_corrode_t = 0.0
+	_bite_t = -1.0
+	_bite_cd = 0.0
 	_set_flash(false)
 	visual.scale = Vector3.ONE * _tier_scale
 	visual.position = Vector3.ZERO
@@ -451,10 +464,20 @@ func _end_entrance() -> void:
 func _tick_chase(delta: float) -> void:
 	var player := Game.player
 	var goal := player.global_position if player else global_position
-	_steer(goal, speed, delta, true)
-	visual.position.y = absf(sin(_state_t * 22.0 + _phase)) * bob_height
+	var winding := _bite_t >= 0.0
+	_steer(goal, speed * (bite_windup_speed if winding else 1.0), delta, true)
+	if winding:
+		# Telegraph: swell and rear up before the lunge.
+		var k := 1.0 - _bite_t / bite_windup
+		visual.scale = Vector3.ONE * _tier_scale * (1.0 + 0.22 * k)
+		visual.position.y = 0.12 * k
+		visual.rotation.x = 0.5 * k
+	else:
+		visual.position.y = absf(sin(_state_t * 22.0 + _phase)) * bob_height
 	if player and player.alive:
 		_attack_tick(player, delta)
+	elif winding:
+		_end_bite()
 
 
 ## Move toward `goal` (routing through doorways if `use_nav`), with swarm
@@ -557,6 +580,8 @@ func take_hit(damage: float, direction: Vector3, knockback: float, _source_team:
 	push = push.normalized() if push.length_squared() > 0.0001 else Vector3.ZERO
 	_knock += push * knockback * (1.0 - knockback_resistance)
 	_move_vel *= hit_stagger
+	if _bite_t >= 0.0 and kind in [&"slash", &"slash_crit"]:
+		_end_bite()  # blade hits interrupt a bite
 	var killed := health <= 0.0
 	if Game.fx and kind != &"silent":
 		Game.fx.on_enemy_hit(global_position, dealt, killed, kind)
@@ -650,12 +675,33 @@ func _modify_damage(amount: float, _direction: Vector3, _kind: StringName) -> fl
 	return amount
 
 
-## Called every chase frame while the player is alive. Default: contact bite.
-func _attack_tick(player: Player, _delta: float) -> void:
+## Called every chase frame while the player is alive. Default: a telegraphed
+## contact bite (wind-up, then a short lunge that hits if you're still close).
+func _attack_tick(player: Player, delta: float) -> void:
 	var d := Vector2(player.global_position.x - global_position.x, player.global_position.z - global_position.z)
-	if d.length() < contact_range * _tier_scale and player.take_damage(contact_damage * damage_mult, global_position):
-		_knock = Vector3(-d.x, 0.0, -d.y).normalized() * 10.0
-		_move_vel = Vector3.ZERO
+	var reach := contact_range * _tier_scale
+	if _bite_t >= 0.0:
+		_bite_t -= delta
+		if _bite_t >= 0.0:
+			return
+		_end_bite()
+		var dir := Vector3(d.x, 0.0, d.y).normalized()
+		if d.length() < reach * bite_reach_mult and player.take_damage(contact_damage * damage_mult, global_position):
+			_knock = -dir * 10.0
+			_move_vel = Vector3.ZERO
+		else:
+			_knock += dir * 5.0  # whiffed lunge
+		return
+	_bite_cd -= delta
+	if _bite_cd <= 0.0 and d.length() < reach * 1.1:
+		_bite_t = bite_windup
+
+
+func _end_bite() -> void:
+	_bite_t = -1.0
+	_bite_cd = bite_recover * randf_range(0.85, 1.15)
+	visual.scale = Vector3.ONE * _tier_scale
+	visual.rotation.x = 0.0
 
 
 func _on_death(_direction: Vector3, _kind: StringName) -> void:

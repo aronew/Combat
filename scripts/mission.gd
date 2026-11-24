@@ -12,7 +12,7 @@ enum Phase { INFILTRATE, UPLOAD, EXTRACT, LIFT, COMPLETE, FAILED }
 
 @export var mission_name := "FIRST DIVE"
 @export var sector_name := "DEEPWORKS // SECTOR 1"
-@export var upload_duration := 70.0
+@export var upload_duration := 60.0
 @export var upload_zone_radius := 7.0
 @export var lift_countdown := 6.0
 @export var elite_at_progress := 0.5
@@ -25,6 +25,9 @@ enum Phase { INFILTRATE, UPLOAD, EXTRACT, LIFT, COMPLETE, FAILED }
 ## Item drop chance by enemy tier; scaled by depth.
 @export var drop_chance_by_tier: Array[float] = [0.012, 0.12, 0.4, 1.0]
 @export var nest_xp := 60
+## Health orb drop chance by enemy tier (normal, blue, gold, purple).
+@export var health_orb_chance_by_tier: Array[float] = [0.07, 0.3, 0.7, 1.0]
+@export var health_orb_heal := 14
 @export var uplink_xp := 300
 
 var phase := Phase.INFILTRATE
@@ -212,6 +215,8 @@ func on_enemy_killed(e: Enemy, pos: Vector3, _kind: StringName) -> void:
 	var d := Profile.dive_depth
 	var type_mult: float = {&"shield": 2.5, &"turret": 3.0, &"burster": 1.2}.get(e.type_id, 1.0)
 	_give_xp(roundi(xp_by_tier[e.tier] * type_mult * (1.0 + 0.25 * (d - 1))))
+	if randf() < health_orb_chance_by_tier[e.tier]:
+		Game.pickups.drop_health(pos, 3 if e.tier == Enemy.Tier.PURPLE else 1, health_orb_heal)
 	var chance: float = drop_chance_by_tier[e.tier] * (1.0 + 0.15 * (d - 1)) * type_mult
 	if randf() < chance:
 		var rarity := Loot.roll_rarity(Loot.drop_weights(e.tier, d))
@@ -220,6 +225,7 @@ func on_enemy_killed(e: Enemy, pos: Vector3, _kind: StringName) -> void:
 
 func _on_nest_destroyed(nest: HiveNest) -> void:
 	_give_xp(nest_xp)
+	Game.pickups.drop_health(nest.global_position, 2, health_orb_heal)
 	var d := Profile.dive_depth
 	if randf() < 0.6:
 		Game.pickups.drop_item(nest.global_position + Vector3(0, 0, 2.0), Loot.roll_item(Profile.item_level_for_depth(d), Loot.roll_rarity(Loot.drop_weights(1, d))))

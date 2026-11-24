@@ -28,14 +28,14 @@ const LEVEL_NAMES := ["DORMANT", "STIRRING", "HUNTING", "ALARM"]
 @export var scream_alert := 5.0
 
 @export_group("Hunting packs")
-@export var hunt_interval := Vector2(7.0, 11.0)
-@export var hunt_pack_size := Vector2i(3, 5)
+@export var hunt_interval := Vector2(10.0, 14.0)
+@export var hunt_pack_size := Vector2i(2, 4)
 
 @export_group("Alarm waves")
-@export var alarm_base_rate := 1.3  ## Bugs per second.
-@export var alarm_rate_from_alert := 1.4  ## Extra bugs/s if you started the uplink at max alert.
-@export var alarm_ramp := 0.015  ## Extra bugs/s per second of alarm.
-@export var extract_rate := 0.9
+@export var alarm_base_rate := 0.85  ## Bugs per second.
+@export var alarm_rate_from_alert := 1.0  ## Extra bugs/s if you started the uplink at max alert.
+@export var alarm_ramp := 0.01  ## Extra bugs/s per second of alarm.
+@export var extract_rate := 0.6
 @export var burster_chance := 0.12
 @export var shield_chance := 0.07
 @export var blue_chance := 0.05
