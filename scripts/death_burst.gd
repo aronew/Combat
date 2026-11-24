@@ -18,16 +18,24 @@ var _t := 0.0
 var _size := 1.0
 var _flash_mat: ShaderMaterial
 var _ring_mat: ShaderMaterial
+var _neon_grad: Gradient
+var _fire_grad: Gradient
 
 
 func _ready() -> void:
 	_flash_mat = flash.material_override
 	_ring_mat = ring.material_override
+	_neon_grad = sparks.color_initial_ramp
+	_fire_grad = Gradient.new()
+	_fire_grad.interpolation_mode = Gradient.GRADIENT_INTERPOLATE_CONSTANT
+	_fire_grad.offsets = PackedFloat32Array([0.0, 0.4, 0.75])
+	_fire_grad.colors = PackedColorArray([Color(1, 0.45, 0.08), Color(1, 0.8, 0.15), Color(1, 0.95, 0.7)])
 	visible = false
 	set_process(false)
 
 
-func play(pos: Vector3, direction: Vector3, size := 1.0) -> void:
+## ring_color alpha 0 = random neon. fire = orange/yellow explosion palette.
+func play(pos: Vector3, direction: Vector3, size := 1.0, ring_color := Color(0, 0, 0, 0), fire := false) -> void:
 	global_position = pos
 	_size = size
 	_t = 0.0
@@ -37,9 +45,12 @@ func play(pos: Vector3, direction: Vector3, size := 1.0) -> void:
 	sparks.direction = dir.normalized() if direction.length_squared() > 0.01 else Vector3.UP
 	sparks.scale_amount_min = 0.6 * size
 	sparks.scale_amount_max = 1.5 * size
+	var grad := _fire_grad if fire else _neon_grad
+	sparks.color_initial_ramp = grad
+	chunks.color_initial_ramp = grad
 	sparks.restart()
 	chunks.restart()
-	_ring_mat.set_shader_parameter("tint", Palette.NEON_BURST.pick_random())
+	_ring_mat.set_shader_parameter("tint", ring_color if ring_color.a > 0.0 else Palette.NEON_BURST.pick_random())
 	ring.position = Vector3(0.0, -0.3, 0.0)
 	_update_visuals()
 	set_process(true)

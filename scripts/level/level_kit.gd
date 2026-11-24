@@ -1,0 +1,408 @@
+@tool
+class_name LevelKit
+extends RefCounted
+## Greybox building blocks for level rooms: decks, railings, lamps, crates, walls,
+## machinery, bridges and void dressing. Visuals go under `root`, all collision
+## into one StaticBody3D (layer 1 "world"). Gameplay data gathered while building
+## (void edges bugs can leap from, spawn blockers) is read back by the Level.
+## Rects are XZ: Rect2(x, z, width, depth). -Z is "north" (top of the screen).
+
+var root: Node3D
+var static_body: StaticBody3D
+var mats := {}
+var _mesh_cache := {}
+
+var spawn_edges: Array[Dictionary] = []  # {a, b, inward, length, from_shaft}
+var blockers: Array[Vector3] = []  # x, z, radius
+
+# Tunables (copied from the Level's exports before building).
+var deck_thickness := 1.0
+var rail_height := 1.05
+var rail_post_spacing := 1.8
+var rail_collision_height := 1.3
+var lamp_spacing := 8.0
+var lamp_energy := 3.2
+var lamp_range := 7.0
+var lamp_emission := 6.0
+var lamp_fog_energy := 1.5
+var pillar_strip_energy := 3.5
+
+
+func _init(parent: Node3D) -> void:
+	root = Node3D.new()
+	root.name = "Generated"
+	parent.add_child(root)
+	static_body = StaticBody3D.new()
+	static_body.name = "Collision"
+	static_body.collision_layer = 1
+	static_body.collision_mask = 0
+	root.add_child(static_body)
+
+
+func make_materials(hive_center: Vector3, hive_radius: float, tile_size: float) -> void:
+	var floor_mat := ShaderMaterial.new()
+	floor_mat.shader = preload("res://scripts/shaders/floor.gdshader")
+	floor_mat.set_shader_parameter("tile_size", tile_size)
+	floor_mat.set_shader_parameter("hive_center", hive_center)
+	floor_mat.set_shader_parameter("hive_radius", hive_radius)
+	mats.floor = floor_mat
+	var grate := ShaderMaterial.new()
+	grate.shader = preload("res://scripts/shaders/grate.gdshader")
+	mats.grate = grate
+	var hazard := ShaderMaterial.new()
+	hazard.shader = preload("res://scripts/shaders/hazard.gdshader")
+	mats.hazard = hazard
+
+	mats.beam = std(Color("181c20"), 0.6, 0.6)
+	mats.pillar = std(Color("1a2023"), 0.4, 0.7)
+	mats.rail = std(Color("6b737a"), 0.8, 0.35)
+	mats.rail_red = std(Color("7a2a26"), 0.6, 0.45)
+	mats.rail_dark = std(Color("3a4047"), 0.7, 0.5)
+	mats.guide = std(Color("e8731e"), 0.1, 0.5, Color("e8731e"), 0.5)
+	mats.guide_white = std(Color("c9cfd4"), 0.1, 0.5, Color("c9cfd4"), 0.25)
+	mats.lamp_post = std(Color("2c3136"), 0.7, 0.45)
+	mats.crate = std(Color("9aa2a8"), 0.25, 0.55)
+	mats.crate_dark = std(Color("40474e"), 0.5, 0.5)
+	mats.crate_orange = std(Color("d9662a"), 0.1, 0.6)
+	mats.machine = std(Color("8a9297"), 0.35, 0.5)
+	mats.machine_dark = std(Color("2a3036"), 0.5, 0.5)
+	mats.bulkhead = std(Color("b9bfc4"), 0.2, 0.55)
+	mats.teal_strip = std(Color("0a1514"), 0.0, 0.5, Color("7ff5e8"), pillar_strip_energy)
+	mats.cobalt_strip = std(Color("0a0f18"), 0.0, 0.5, Color("6fa8ff"), 4.0)
+	mats.red_light = std(Color("200606"), 0.0, 0.5, Color("ff2a2a"), 5.0)
+	mats.amber_strip = std(Color("201a10"), 0.0, 0.5, Color("ffae45"), 4.0)
+
+
+func std(albedo: Color, metallic: float, roughness: float, emission := Color.BLACK, emission_energy := 0.0) -> StandardMaterial3D:
+	var m := StandardMaterial3D.new()
+	m.albedo_color = albedo
+	m.metallic = metallic
+	m.roughness = roughness
+	if emission_energy > 0.0:
+		m.emission_enabled = true
+		m.emission = emission
+		m.emission_energy_multiplier = emission_energy
+	return m
+
+
+## Emissive lamp-head material per colour (cached).
+func lamp_mat(color: Color) -> StandardMaterial3D:
+	var key := "lamp_%s" % color.to_html()
+	if not mats.has(key):
+		mats[key] = std(Color("201a10"), 0.0, 0.5, color, lamp_emission)
+	return mats[key]
+
+
+# --------------------------------------------------------------------------
+# Primitives
+# --------------------------------------------------------------------------
+
+func box(size: Vector3, pos: Vector3, mat: Material, collide := false, rot_y := 0.0, shadows := true) -> MeshInstance3D:
+	var key := "b%s" % size
+	if not _mesh_cache.has(key):
+		var bm := BoxMesh.new()
+		bm.size = size
+		_mesh_cache[key] = bm
+	var mi := MeshInstance3D.new()
+	mi.mesh = _mesh_cache[key]
+	mi.material_override = mat
+	mi.position = pos
+	mi.rotation.y = rot_y
+	if not shadows:
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	root.add_child(mi)
+	if collide:
+		collider(size, pos, rot_y)
+	return mi
+
+
+func collider(size: Vector3, pos: Vector3, rot_y := 0.0) -> void:
+	var cs := CollisionShape3D.new()
+	var shape := BoxShape3D.new()
+	shape.size = size
+	cs.shape = shape
+	cs.position = pos
+	cs.rotation.y = rot_y
+	static_body.add_child(cs)
+
+
+func sphere(radius: float, pos: Vector3, mat: Material, squash := Vector3.ONE) -> MeshInstance3D:
+	var key := "s%.2f" % radius
+	if not _mesh_cache.has(key):
+		var sm := SphereMesh.new()
+		sm.radius = radius
+		sm.height = radius * 2.0
+		sm.radial_segments = 16
+		sm.rings = 8
+		_mesh_cache[key] = sm
+	var mi := MeshInstance3D.new()
+	mi.mesh = _mesh_cache[key]
+	mi.material_override = mat
+	mi.position = pos
+	mi.scale = squash
+	root.add_child(mi)
+	return mi
+
+
+func plane(size: Vector2, pos: Vector3, mat: Material, rot_y := 0.0) -> MeshInstance3D:
+	var pm := PlaneMesh.new()
+	pm.size = size
+	var mi := MeshInstance3D.new()
+	mi.mesh = pm
+	mi.material_override = mat
+	mi.position = pos
+	mi.rotation.y = rot_y
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	root.add_child(mi)
+	return mi
+
+
+func torus(inner: float, outer: float, pos: Vector3, mat: Material) -> MeshInstance3D:
+	var tm := TorusMesh.new()
+	tm.inner_radius = inner
+	tm.outer_radius = outer
+	tm.rings = 48
+	tm.ring_segments = 6
+	var mi := MeshInstance3D.new()
+	mi.mesh = tm
+	mi.material_override = mat
+	mi.position = pos
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	root.add_child(mi)
+	return mi
+
+
+func omni(pos: Vector3, color: Color, energy: float, range_m: float, fog_energy := 1.0) -> OmniLight3D:
+	var light := OmniLight3D.new()
+	light.light_color = color
+	light.light_energy = energy
+	light.omni_range = range_m
+	light.omni_attenuation = 1.3
+	light.light_volumetric_fog_energy = fog_energy
+	light.position = pos
+	root.add_child(light)
+	return light
+
+
+func add_blocker(x: float, z: float, radius: float) -> void:
+	blockers.append(Vector3(x, z, radius))
+
+
+# --------------------------------------------------------------------------
+# Structures
+# --------------------------------------------------------------------------
+
+## Floor slab for an XZ rect, with a darker lip, underside girders and support pillars.
+func deck(r: Rect2, floor_mat: Material = null, pillars := true) -> void:
+	var c := Vector3(r.get_center().x, 0.0, r.get_center().y)
+	box(Vector3(r.size.x, deck_thickness, r.size.y), c + Vector3(0, -deck_thickness * 0.5, 0), floor_mat if floor_mat else mats.floor)
+	box(Vector3(r.size.x + 0.4, 0.45, r.size.y + 0.4), c + Vector3(0, -deck_thickness - 0.15, 0), mats.beam)
+	var n := maxi(1, int(r.size.x / 4.0))
+	for i in n + 1:
+		var x := r.position.x + i * (r.size.x / n)
+		box(Vector3(0.45, 1.4, maxf(r.size.y - 0.6, 0.5)), Vector3(x, -deck_thickness - 1.0, c.z), mats.beam, false, 0.0, false)
+	if pillars and r.size.x > 6.0 and r.size.y > 6.0:
+		for sx in [-1.0, 1.0]:
+			for sz in [-1.0, 1.0]:
+				var p := c + Vector3(sx * (r.size.x * 0.5 - 2.0), 0, sz * (r.size.y * 0.5 - 2.0))
+				box(Vector3(1.6, 90.0, 1.6), p + Vector3(0, -deck_thickness - 45.0, 0), mats.pillar, false, 0.0, false)
+
+
+## Narrow grated catwalk over the void (rect is the walkable area).
+func bridge(r: Rect2, along_x: bool, solid := false) -> void:
+	var c := Vector3(r.get_center().x, 0.0, r.get_center().y)
+	var length := r.size.x if along_x else r.size.y
+	var width := r.size.y if along_x else r.size.x
+	var size := Vector3(r.size.x, 0.08, r.size.y)
+	if solid:
+		box(Vector3(r.size.x, deck_thickness, r.size.y), c + Vector3(0, -deck_thickness * 0.5, 0), mats.floor)
+	else:
+		var deck_mi := box(size, c + Vector3(0, -0.04, 0), mats.grate)
+		var g: ShaderMaterial = mats.grate.duplicate()
+		g.set_shader_parameter("frame_half_extents", Vector2(r.size.x * 0.5, r.size.y * 0.5))
+		deck_mi.material_override = g
+	for s in [-1.0, 1.0]:
+		var off := Vector3(0, -0.3, s * (width * 0.5 + 0.05)) if along_x else Vector3(s * (width * 0.5 + 0.05), -0.3, 0)
+		var gs := Vector3(length, 0.5, 0.18) if along_x else Vector3(0.18, 0.5, length)
+		box(gs, c + off, mats.beam)
+	box(Vector3(length, 0.18, 0.4) if along_x else Vector3(0.4, 0.18, length), c + Vector3(0, -1.2, 0), mats.beam, false, 0.0, false)
+
+
+## Straight railing: posts, rails, kick plate, collision, optional lamps and a
+## void edge that bugs can leap over.
+func rail_run(a: Vector3, b: Vector3, inward: Vector3, lamp_color := Color("ffae45"), lamps := true,
+		spawn_edge := false, from_shaft := false, rail_mat: Material = null) -> void:
+	var d := b - a
+	var length := d.length()
+	if length < 0.3:
+		return
+	var dir := d / length
+	var rot := atan2(-dir.z, dir.x)
+	var mid := (a + b) * 0.5
+	var rm: Material = rail_mat if rail_mat else mats.rail
+	box(Vector3(length, 0.08, 0.08), mid + Vector3(0, rail_height, 0), rm, false, rot)
+	box(Vector3(length, 0.05, 0.05), mid + Vector3(0, rail_height * 0.55, 0), rm, false, rot, false)
+	box(Vector3(length, 0.2, 0.05), mid + Vector3(0, 0.1, 0), mats.rail_dark, false, rot, false)
+	var posts := maxi(1, ceili(length / rail_post_spacing))
+	for i in posts + 1:
+		var p := a + dir * (length * i / posts)
+		box(Vector3(0.1, rail_height, 0.1), p + Vector3(0, rail_height * 0.5, 0), rm, false, rot, false)
+	collider(Vector3(length, rail_collision_height, 0.3), mid + Vector3(0, rail_collision_height * 0.5, 0), rot)
+	if lamps and length >= lamp_spacing * 0.6:
+		var count := maxi(1, roundi(length / lamp_spacing))
+		for i in count:
+			lamp(a + dir * (length * (i + 0.5) / count) + inward * 0.22, inward, lamp_color)
+	if spawn_edge:
+		spawn_edges.append({"a": a, "b": b, "inward": inward, "length": length, "from_shaft": from_shaft})
+
+
+func lamp(pos: Vector3, inward: Vector3, color: Color) -> void:
+	box(Vector3(0.1, 1.6, 0.1), pos + Vector3(0, 0.8, 0), mats.lamp_post, false, 0.0, false)
+	box(Vector3(0.2, 0.34, 0.2), pos + Vector3(0, 1.66, 0), lamp_mat(color), false, 0.0, false)
+	box(Vector3(0.24, 0.05, 0.24), pos + Vector3(0, 1.85, 0), mats.lamp_post, false, 0.0, false)
+	omni(pos + inward * 0.35 + Vector3(0, 1.7, 0), color, lamp_energy, lamp_range, lamp_fog_energy)
+
+
+## Railings around a rect, leaving gaps for `openings` ({side, lo, hi}).
+func rails_around(r: Rect2, openings: Array, lamp_color: Color, spawn_edges_on := true, rail_mat: Material = null) -> void:
+	var x0 := r.position.x
+	var x1 := r.end.x
+	var z0 := r.position.y
+	var z1 := r.end.y
+	_side_rails(&"n", Vector3(x0, 0, z0), Vector3(x1, 0, z0), Vector3.BACK, openings, lamp_color, spawn_edges_on, rail_mat)
+	_side_rails(&"s", Vector3(x0, 0, z1), Vector3(x1, 0, z1), Vector3.FORWARD, openings, lamp_color, spawn_edges_on, rail_mat)
+	_side_rails(&"w", Vector3(x0, 0, z0), Vector3(x0, 0, z1), Vector3.RIGHT, openings, lamp_color, spawn_edges_on, rail_mat)
+	_side_rails(&"e", Vector3(x1, 0, z0), Vector3(x1, 0, z1), Vector3.LEFT, openings, lamp_color, spawn_edges_on, rail_mat)
+
+
+func _side_rails(side: StringName, a: Vector3, b: Vector3, inward: Vector3, openings: Array, lamp_color: Color, spawn_on: bool, rail_mat: Material) -> void:
+	var along_x := absf(b.x - a.x) > absf(b.z - a.z)
+	var lo := a.x if along_x else a.z
+	var hi := b.x if along_x else b.z
+	var gaps: Array = []
+	for o in openings:
+		if o.side == side:
+			gaps.append(Vector2(o.lo, o.hi))
+	gaps.sort_custom(func(p, q): return p.x < q.x)
+	var cursor := lo
+	for g in gaps:
+		if g.x > cursor + 0.05:
+			_rail_segment(along_x, a, cursor, g.x, inward, lamp_color, spawn_on, rail_mat)
+		cursor = maxf(cursor, g.y)
+	if hi > cursor + 0.05:
+		_rail_segment(along_x, a, cursor, hi, inward, lamp_color, spawn_on, rail_mat)
+
+
+func _rail_segment(along_x: bool, origin: Vector3, s0: float, s1: float, inward: Vector3, lamp_color: Color, spawn_on: bool, rail_mat: Material) -> void:
+	var p0 := Vector3(s0, 0, origin.z) if along_x else Vector3(origin.x, 0, s0)
+	var p1 := Vector3(s1, 0, origin.z) if along_x else Vector3(origin.x, 0, s1)
+	rail_run(p0, p1, inward, lamp_color, true, spawn_on, false, rail_mat)
+
+
+func guide_line(a: Vector3, b: Vector3, width := 0.16, mat: Material = null) -> void:
+	var d := b - a
+	box(Vector3(d.length(), 0.02, width), (a + b) * 0.5 + Vector3(0, 0.011, 0), mat if mat else mats.guide, false, atan2(-d.z, d.x), false)
+
+
+func hazard_panel(size: Vector2, pos: Vector3, rot_y := 0.0) -> void:
+	plane(size, Vector3(pos.x, 0.012, pos.z), mats.hazard, rot_y)
+
+
+func crate(x: float, z: float, rot_deg: float, stack: int) -> void:
+	stack = clampi(stack, 1, 3)
+	var rot := deg_to_rad(rot_deg)
+	var base := Vector3(x, 0, z)
+	var size := Vector3(1.55, 1.2, 1.25)
+	var h := 0.0
+	for s in stack:
+		var sz := size if s == 0 else size * Vector3(0.94, 0.95, 0.94)
+		var center := base + Vector3(0, h + sz.y * 0.5, 0)
+		box(sz, center, mats.crate, false, rot)
+		box(Vector3(sz.x + 0.04, 0.12, sz.z + 0.04), center + Vector3(0, sz.y * 0.32, 0), mats.crate_dark, false, rot, false)
+		box(Vector3(sz.x + 0.04, 0.12, sz.z + 0.04), center + Vector3(0, -sz.y * 0.32, 0), mats.crate_dark, false, rot, false)
+		box(Vector3(sz.x * 0.82, 0.03, sz.z * 0.78), center + Vector3(0, sz.y * 0.5 + 0.01, 0), mats.crate_dark, false, rot, false)
+		var face := Vector3(0, 0, sz.z * 0.5 + 0.015).rotated(Vector3.UP, rot)
+		box(Vector3(sz.x * 0.45, 0.14, 0.03), center + face + Vector3(0, 0.05, 0), mats.crate_orange, false, rot, false)
+		h += sz.y
+	collider(Vector3(size.x, h + 0.1, size.z), base + Vector3(0, (h + 0.1) * 0.5, 0), rot)
+	add_blocker(x, z, 1.15)
+
+
+## Solid bulkhead wall between two points (with collision), e.g. the pressure lock.
+func wall(a: Vector3, b: Vector3, height := 3.2, thickness := 0.6) -> void:
+	var d := b - a
+	var length := d.length()
+	if length < 0.1:
+		return
+	var rot := atan2(-d.z, d.x)
+	var mid := (a + b) * 0.5
+	box(Vector3(length, height, thickness), mid + Vector3(0, height * 0.5, 0), mats.bulkhead, true, rot)
+	box(Vector3(length, 0.25, thickness + 0.08), mid + Vector3(0, height, 0), mats.machine_dark, false, rot)
+	box(Vector3(length, 0.12, thickness + 0.04), mid + Vector3(0, 0.9, 0), mats.machine_dark, false, rot, false)
+	var n := int(length)
+	for i in n:
+		var p := a + d.normalized() * (i + 0.5)
+		add_blocker(p.x, p.z, 0.7)
+
+
+## Row of switchgear cabinets filling a rect (Cobalt Switchgear Gallery concept).
+func machinery_block(r: Rect2, height := 2.4) -> void:
+	var c := Vector3(r.get_center().x, 0.0, r.get_center().y)
+	box(Vector3(r.size.x, height, r.size.y), c + Vector3(0, height * 0.5, 0), mats.machine, true)
+	box(Vector3(r.size.x + 0.1, 0.2, r.size.y + 0.1), c + Vector3(0, height + 0.1, 0), mats.machine_dark)
+	var cabinets := int(r.size.x / 1.6)
+	for i in cabinets:
+		var x := r.position.x + (i + 0.5) * (r.size.x / cabinets)
+		for s in [-1.0, 1.0]:
+			var z: float = c.z + s * (r.size.y * 0.5 + 0.02)
+			box(Vector3(0.05, height * 0.85, 0.04), Vector3(x + 0.78, height * 0.45, z), mats.machine_dark, false, 0.0, false)
+			if i % 2 == 0:
+				box(Vector3(0.35, 0.08, 0.04), Vector3(x, height * 0.72, z), mats.cobalt_strip, false, 0.0, false)
+	# Roof-top vents and cable bundles.
+	for i in 3:
+		box(Vector3(1.6, 0.35, r.size.y * 0.5), c + Vector3((i - 1) * r.size.x * 0.3, height + 0.35, 0), mats.machine_dark)
+	var steps := int(r.size.x / 2.0)
+	for i in steps + 1:
+		var x := r.position.x + i * (r.size.x / steps)
+		for s in [-1.0, 1.0]:
+			add_blocker(x, c.z + s * r.size.y * 0.25, r.size.y * 0.5 + 0.4)
+
+
+## Giant columns, hanging cages and the volumetric fog volume filling the void.
+func void_dressing(bounds: Rect2, fog_top: float, fog_density: float, fog_albedo: Color, fog_emission: Color) -> void:
+	var c := bounds.get_center()
+	var margin := 16.0
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 4242
+	var spots: Array[Vector3] = []
+	for i in 14:
+		var ang := TAU * i / 14.0 + rng.randf_range(-0.15, 0.15)
+		var rx := bounds.size.x * 0.5 + margin + rng.randf_range(4.0, 22.0)
+		var rz := bounds.size.y * 0.5 + margin + rng.randf_range(4.0, 22.0)
+		var top := rng.randf_range(-8.0, 12.0) if sin(ang) < 0.0 else rng.randf_range(-14.0, -4.0)
+		spots.append(Vector3(c.x + cos(ang) * rx, top, c.y + sin(ang) * rz))
+	for s in spots:
+		var w := rng.randf_range(4.0, 7.5)
+		var height := s.y + 150.0
+		box(Vector3(w, height, w), Vector3(s.x, s.y - height * 0.5, s.z), mats.pillar, false, 0.0, false)
+		for k in 5:
+			var y := s.y - 6.0 - k * 9.0
+			box(Vector3(w * 0.35, 0.5, 0.06), Vector3(s.x, y, s.z + w * 0.5 + 0.04), mats.teal_strip, false, 0.0, false)
+		var cage := Vector3(s.x + signf(c.x - s.x) * (w * 0.5 + 1.5), s.y - 14.0, s.z)
+		var cage_deck := box(Vector3(3.0, 0.1, 3.0), cage, mats.grate.duplicate(), false, 0.0, false)
+		(cage_deck.material_override as ShaderMaterial).set_shader_parameter("frame_half_extents", Vector2(1.5, 1.5))
+		box(Vector3(3.0, 0.06, 0.06), cage + Vector3(0, 1.0, 1.47), mats.rail_dark, false, 0.0, false)
+		box(Vector3(0.4, 0.12, 0.05), cage + Vector3(0, 1.4, 1.5), mats.teal_strip, false, 0.0, false)
+
+	var fog := FogVolume.new()
+	fog.name = "VoidFog"
+	fog.size = Vector3(bounds.size.x + 400.0, 160.0, bounds.size.y + 400.0)
+	fog.shape = RenderingServer.FOG_VOLUME_SHAPE_BOX
+	fog.position = Vector3(c.x, fog_top - 80.0, c.y)
+	var fm := FogMaterial.new()
+	fm.density = fog_density
+	fm.albedo = fog_albedo
+	fm.emission = fog_emission
+	fm.edge_fade = 0.02
+	fog.material = fm
+	root.add_child(fog)

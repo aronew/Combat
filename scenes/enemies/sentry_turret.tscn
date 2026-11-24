@@ -1,0 +1,137 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scripts/enemies/sentry_turret.gd" id="1_turret"]
+[ext_resource type="Shader" path="res://scripts/shaders/neon_fade.gdshader" id="2_fade"]
+
+[sub_resource type="SphereShape3D" id="Shape_body"]
+radius = 0.7
+
+[sub_resource type="StandardMaterial3D" id="Mat_shell"]
+albedo_color = Color(0.2, 0.17, 0.16, 1)
+metallic = 0.4
+roughness = 0.35
+rim_enabled = true
+rim = 0.5
+
+[sub_resource type="StandardMaterial3D" id="Mat_eye"]
+albedo_color = Color(0.05, 0.3, 0.35, 1)
+emission_enabled = true
+emission = Color(0.1, 0.95, 1, 1)
+emission_energy_multiplier = 5.0
+
+[sub_resource type="ShaderMaterial" id="Mat_telegraph"]
+render_priority = 3
+shader = ExtResource("2_fade")
+shader_parameter/tint = Color(1, 0.12, 0.18, 1)
+shader_parameter/energy = 3.0
+shader_parameter/fade = 0.9
+shader_parameter/edge_softness = 0.0
+
+[sub_resource type="ShaderMaterial" id="Mat_beam"]
+resource_local_to_scene = true
+render_priority = 4
+shader = ExtResource("2_fade")
+shader_parameter/tint = Color(1, 0.35, 0.2, 1)
+shader_parameter/energy = 6.0
+shader_parameter/fade = 1.0
+shader_parameter/edge_softness = 0.3
+
+[sub_resource type="SphereMesh" id="Mesh_body"]
+material = SubResource("Mat_shell")
+radius = 0.5
+height = 1.0
+radial_segments = 14
+rings = 7
+
+[sub_resource type="BoxMesh" id="Mesh_leg"]
+material = SubResource("Mat_shell")
+size = Vector3(0.12, 1.1, 0.12)
+
+[sub_resource type="SphereMesh" id="Mesh_eye"]
+material = SubResource("Mat_eye")
+radius = 0.2
+height = 0.4
+radial_segments = 12
+rings = 6
+
+[sub_resource type="PrismMesh" id="Mesh_spike"]
+material = SubResource("Mat_shell")
+size = Vector3(0.22, 0.6, 0.12)
+
+[sub_resource type="BoxMesh" id="Mesh_line"]
+size = Vector3(0.05, 0.05, 1)
+
+[sub_resource type="BoxMesh" id="Mesh_beam"]
+size = Vector3(0.28, 0.28, 1)
+
+[node name="SentryTurret" type="CharacterBody3D"]
+collision_layer = 5
+collision_mask = 1
+motion_mode = 1
+script = ExtResource("1_turret")
+type_id = &"turret"
+display_name = "Sentry Turret"
+base_health = 140.0
+base_speed = 0.0
+contact_damage = 0.0
+radius = 0.7
+knockback_resistance = 1.0
+salvage = 6
+sight_range = 14.0
+sleep_sight_range = 9.0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+position = Vector3(0, 0.75, 0)
+shape = SubResource("Shape_body")
+
+[node name="Visual" type="Node3D" parent="."]
+
+[node name="Leg1" type="MeshInstance3D" parent="Visual"]
+position = Vector3(0, 0.45, -0.45)
+rotation_degrees = Vector3(-35, 0, 0)
+mesh = SubResource("Mesh_leg")
+
+[node name="Leg2" type="MeshInstance3D" parent="Visual"]
+position = Vector3(0.4, 0.45, 0.25)
+rotation_degrees = Vector3(20, 0, -30)
+mesh = SubResource("Mesh_leg")
+
+[node name="Leg3" type="MeshInstance3D" parent="Visual"]
+position = Vector3(-0.4, 0.45, 0.25)
+rotation_degrees = Vector3(20, 0, 30)
+mesh = SubResource("Mesh_leg")
+
+[node name="Head" type="Node3D" parent="Visual"]
+position = Vector3(0, 1.05, 0)
+
+[node name="Body" type="MeshInstance3D" parent="Visual/Head"]
+mesh = SubResource("Mesh_body")
+
+[node name="Eye" type="MeshInstance3D" parent="Visual/Head"]
+position = Vector3(0, 0, -0.42)
+cast_shadow = 0
+mesh = SubResource("Mesh_eye")
+
+[node name="SpikeL" type="MeshInstance3D" parent="Visual/Head"]
+position = Vector3(-0.35, 0.4, 0)
+rotation_degrees = Vector3(0, 0, 25)
+mesh = SubResource("Mesh_spike")
+
+[node name="SpikeR" type="MeshInstance3D" parent="Visual/Head"]
+position = Vector3(0.35, 0.4, 0)
+rotation_degrees = Vector3(0, 0, -25)
+mesh = SubResource("Mesh_spike")
+
+[node name="SpikeTop" type="MeshInstance3D" parent="Visual/Head"]
+position = Vector3(0, 0.5, 0.05)
+mesh = SubResource("Mesh_spike")
+
+[node name="Telegraph" type="MeshInstance3D" parent="."]
+cast_shadow = 0
+mesh = SubResource("Mesh_line")
+material_override = SubResource("Mat_telegraph")
+
+[node name="Beam" type="MeshInstance3D" parent="."]
+cast_shadow = 0
+mesh = SubResource("Mesh_beam")
+material_override = SubResource("Mat_beam")
