@@ -2,7 +2,8 @@
 
 Top-down arcade twin-stick action RPG against alien bug swarms: dive, loot, extract, upgrade.
 Godot 4.7, GDScript, Forward+.
-Everything is built from primitives; the look follows the concept art in `reference/`.
+Everything is built from primitives except the Swarmer and Burster, which are rigged Blender
+models (see `art_src/README.md`). The look follows the concept art in `reference/`.
 
 ## The loop
 
@@ -146,6 +147,8 @@ scripts/
   game.gd + profile.gd (autoloads), mission.gd, hive_director.gd, spawner.gd, player.gd, fx.gd, pickups.gd
 tests/           test_loot.gd (items/stats/save), test_hub.gd (stations, every weapon on the range, deploy)
 ui/              hud.tscn
+assets/          models (.glb from art_src/) and shared materials
+art_src/         Blender Python scripts that build the models
 reference/       concept art (ignored by the importer via .gdignore)
 ```
 

@@ -65,6 +65,14 @@ const TIER_SALVAGE := [1, 3, 6, 30]
 @export var drop_duration := 0.42
 @export var drop_height := 11.0
 
+@export_group("Animation")
+## Ground speed (m/s) at which the model's "walk" clip plays at 1x.
+@export var walk_anim_speed := 1.3
+@export var max_anim_speed := 3.5
+## Time (s) into the "attack" clip where the mandibles snap shut; the clip is
+## sped up or slowed down so this lines up with the end of the bite wind-up.
+@export var attack_anim_hit_time := 0.2
+
 @export_group("Feedback")
 @export var flash_duration := 0.07
 @export var flash_material: Material = preload("res://scenes/materials/hit_flash.tres")
@@ -111,6 +119,8 @@ var _corrode_t := 0.0
 var _status_fx_t := 0.0
 var _bite_t := -1.0
 var _bite_cd := 0.0
+var _anim: AnimationPlayer
+var _anim_lock := 0.0
 
 static var _aura_mats := {}
 
@@ -122,6 +132,7 @@ func _ready() -> void:
 	_los_query.exclude = [get_rid()]
 	for n in visual.find_children("*", "GeometryInstance3D", true, false):
 		_flash_targets.append(n)
+	_anim = visual.find_child("AnimationPlayer", true, false) as AnimationPlayer
 	_phase = randf() * TAU
 	_aura = MeshInstance3D.new()
 	var tm := TorusMesh.new()
@@ -206,6 +217,10 @@ func _activate(health_mult: float, speed_mult: float) -> void:
 	visual.scale = Vector3.ONE * _tier_scale
 	visual.position = Vector3.ZERO
 	visual.rotation = Vector3.ZERO
+	_anim_lock = 0.0
+	if _anim and _anim.has_animation(&"idle"):
+		_anim.play(&"idle")
+		_anim.seek(randf() * _anim.current_animation_length, true)
 	process_mode = Node.PROCESS_MODE_INHERIT
 	visible = true
 	_update_tier_visuals()
@@ -384,6 +399,7 @@ func _physics_process(delta: float) -> void:
 		_tick_status(delta)
 		if not is_active():
 			return
+	_update_anim(delta)
 	if _custom_tick(delta):
 		return
 	match state:
@@ -622,6 +638,42 @@ func _die(direction: Vector3, kind: StringName) -> void:
 		deactivate()
 
 
+# ==========================================================================
+# Model animation (only for models that ship an AnimationPlayer)
+# ==========================================================================
+
+## Clips: "idle" and "walk" loop, others are one-shots that hold until done.
+func _update_anim(delta: float) -> void:
+	if _anim == null:
+		return
+	if _anim_lock > 0.0:
+		_anim_lock -= delta
+		return
+	var spd := Vector2(_move_vel.x + _knock.x, _move_vel.z + _knock.z).length()
+	if state == State.EMERGE or state == State.LEAP or state == State.DROP:
+		_play_anim(&"walk", max_anim_speed)
+	elif spd > 0.3:
+		_play_anim(&"walk", clampf(spd / walk_anim_speed, 0.5, max_anim_speed))
+	else:
+		_play_anim(&"idle", 0.5 if state == State.DORMANT else 1.0)
+
+
+func _play_anim(clip: StringName, speed_scale: float) -> void:
+	if not _anim.has_animation(clip):
+		return
+	if _anim.current_animation != clip:
+		_anim.play(clip, 0.12)
+	_anim.speed_scale = speed_scale
+
+
+func play_anim_oneshot(clip: StringName, speed_scale := 1.0) -> void:
+	if _anim == null or not _anim.has_animation(clip):
+		return
+	_anim.play(clip, 0.05)
+	_anim.speed_scale = speed_scale
+	_anim_lock = _anim.get_animation(clip).length / maxf(speed_scale, 0.01)
+
+
 func _set_flash(on: bool) -> void:
 	for g in _flash_targets:
 		g.material_override = flash_material if on else null
@@ -705,6 +757,8 @@ func _attack_tick(player: Player, delta: float) -> void:
 	_bite_cd -= delta
 	if _bite_cd <= 0.0 and d.length() < reach * 1.1:
 		_bite_t = bite_windup
+		# time the clip so its snap lands when the bite resolves
+		play_anim_oneshot(&"attack", attack_anim_hit_time / maxf(bite_windup, 0.05))
 
 
 func _end_bite() -> void:
