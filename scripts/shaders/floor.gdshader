@@ -1,20 +1,23 @@
-// Gunmetal deck plating: world-space tile seams, per-tile tone variation,
-// grime smudges, and glowing green hive veins that spread around the hive corner.
+// Worn concrete-steel deck plating: world-space tile seams, per-tile tone
+// variation, grime smudges, wet patches that catch the lamp light, and glowing
+// yellow-green hive cracks that spread around the hive.
 shader_type spatial;
 
-uniform vec3 base_color : source_color = vec3(0.16, 0.175, 0.19);
-uniform vec3 seam_color : source_color = vec3(0.05, 0.055, 0.06);
+uniform vec3 base_color : source_color = vec3(0.34, 0.33, 0.31);
+uniform vec3 seam_color : source_color = vec3(0.09, 0.09, 0.09);
 uniform float tile_size = 3.0;
 uniform float seam_width = 0.05;
 uniform float tile_variation = 0.16;
-uniform float metallic_value : hint_range(0.0, 1.0) = 0.55;
-uniform float roughness_value : hint_range(0.0, 1.0) = 0.55;
+uniform float metallic_value : hint_range(0.0, 1.0) = 0.25;
+uniform float roughness_value : hint_range(0.0, 1.0) = 0.62;
+// How much of the deck is wet (shiny, slightly darker puddles).
+uniform float wetness : hint_range(0.0, 1.0) = 0.45;
 
 uniform vec3 hive_center = vec3(13.5, 0.0, -8.5);
 uniform float hive_radius = 7.0;
-uniform vec3 grime_color : source_color = vec3(0.07, 0.11, 0.03);
-uniform vec3 vein_color : source_color = vec3(0.55, 1.0, 0.15);
-uniform float vein_energy = 1.4;
+uniform vec3 grime_color : source_color = vec3(0.12, 0.13, 0.05);
+uniform vec3 vein_color : source_color = vec3(0.78, 0.9, 0.12);
+uniform float vein_energy = 0.7;
 
 varying vec3 world_pos;
 
@@ -62,10 +65,14 @@ void fragment() {
 	float infest = 1.0 - smoothstep(hive_radius * 0.25, hive_radius, d);
 	col = mix(col, grime_color, infest * 0.8);
 	float n = fbm(world_pos.xz * 1.1 + vec2(3.7, 1.3));
-	float vein = 1.0 - smoothstep(0.0, 0.03, abs(n - 0.5));
+	float vein = (1.0 - smoothstep(0.0, 0.018, abs(n - 0.5))) * step(0.45, fbm(world_pos.xz * 0.3 + vec2(1.7, 9.2)));
+
+	// Wet patches: darker and glossy, so lamps leave bright streaks on the deck.
+	float wet = smoothstep(0.62 - wetness * 0.25, 0.68 - wetness * 0.25, fbm(world_pos.xz * 0.12 + vec2(7.1, 2.3)));
+	col *= mix(1.0, 0.72, wet);
 
 	ALBEDO = col;
 	METALLIC = metallic_value;
-	ROUGHNESS = mix(roughness_value - 0.15 * smudge, 0.9, seam);
+	ROUGHNESS = mix(mix(roughness_value - 0.15 * smudge, 0.12, wet), 0.9, seam);
 	EMISSION = vein_color * vein * infest * vein_energy;
 }

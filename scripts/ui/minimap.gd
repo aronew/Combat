@@ -25,6 +25,8 @@ extends Control
 var _t := 0.0
 var _scale := 1.0
 var _offset := Vector2.ZERO
+## Map rotation so "up" on the map is "up" on screen (the camera is turned 45°).
+var _rot := 0.0
 var _font: Font
 
 
@@ -43,7 +45,13 @@ func _process(delta: float) -> void:
 
 
 func _to_map(p: Vector3) -> Vector2:
-	return Vector2(p.x, p.z) * _scale + _offset
+	return Vector2(p.x, p.z).rotated(_rot) * _scale + _offset
+
+
+func _rect_poly(r: Rect2) -> PackedVector2Array:
+	return PackedVector2Array([
+		_to_map(Vector3(r.position.x, 0, r.position.y)), _to_map(Vector3(r.end.x, 0, r.position.y)),
+		_to_map(Vector3(r.end.x, 0, r.end.y)), _to_map(Vector3(r.position.x, 0, r.end.y))])
 
 
 func _draw() -> void:
@@ -52,30 +60,42 @@ func _draw() -> void:
 		return
 	draw_rect(Rect2(Vector2.ZERO, size), Color(0.02, 0.05, 0.06, 0.82 if full else 0.55))
 	var p := Game.player
+	_rot = deg_to_rad(Game.camera_rig.yaw_degrees) if Game.camera_rig else 0.0
 	if full or not lvl.generated or p == null:
-		var b: Rect2 = lvl.bounds
+		# Fit the (rotated) floor into the map.
+		var lo := Vector2(INF, INF)
+		var hi := Vector2(-INF, -INF)
+		for reg in lvl.regions:
+			var rr: Rect2 = reg.rect
+			for c in [rr.position, Vector2(rr.end.x, rr.position.y), rr.end, Vector2(rr.position.x, rr.end.y)]:
+				var q: Vector2 = (c as Vector2).rotated(_rot)
+				lo = lo.min(q)
+				hi = hi.max(q)
 		var avail := size - Vector2(padding, padding) * 2.0
-		_scale = minf(avail.x / b.size.x, avail.y / b.size.y)
-		_offset = Vector2(padding, padding) + (avail - b.size * _scale) * 0.5 - b.position * _scale
+		var ext := (hi - lo).max(Vector2(1, 1))
+		_scale = minf(avail.x / ext.x, avail.y / ext.y)
+		_offset = Vector2(padding, padding) + (avail - ext * _scale) * 0.5 - lo * _scale
 	else:
 		_scale = size.x / view_width
-		_offset = size * 0.5 - Vector2(p.global_position.x, p.global_position.z) * _scale
+		_offset = size * 0.5 - Vector2(p.global_position.x, p.global_position.z).rotated(_rot) * _scale
 	var view := Rect2(Vector2.ZERO, size)
 
 	for i in lvl.regions.size():
 		var reg: Dictionary = lvl.regions[i]
-		var r: Rect2 = reg.rect
-		var mr := Rect2(r.position * _scale + _offset, r.size * _scale)
-		if not mr.intersects(view):
+		var poly := _rect_poly(reg.rect)
+		var mb := Rect2(poly[0], Vector2.ZERO)
+		for v in poly:
+			mb = mb.expand(v)
+		if not mb.intersects(view):
 			continue
 		if lvl.discovered.has(i):
-			draw_rect(mr, bridge_color if reg.room == &"bridge" else floor_color)
+			draw_colored_polygon(poly, bridge_color if reg.room == &"bridge" else floor_color)
 		elif full:
 			# Unexplored: just a faint shape on the full map, so you can plan a route.
-			draw_rect(mr, Color(floor_color, 0.1))
+			draw_colored_polygon(poly, Color(floor_color, 0.1))
 	for r in lvl.minimap_solids:
 		if _seen(lvl, Vector3(r.get_center().x, 0, r.get_center().y), r.size.length() * 0.5 + 1.0):
-			draw_rect(Rect2(r.position * _scale + _offset, r.size * _scale), solid_color)
+			draw_colored_polygon(_rect_poly(r), solid_color)
 
 	_marker_square(lvl.lift_position, lift_color, 4.0, _seen(lvl, lvl.lift_position, 3.0))
 	if lvl.cargo_position != Vector3.INF:
@@ -107,7 +127,7 @@ func _draw() -> void:
 	if p:
 		var pp := _to_map(p.global_position)
 		draw_circle(pp, 3.5, player_color)
-		draw_line(pp, pp + Vector2(p.aim_dir.x, p.aim_dir.z) * 9.0, player_color, 1.5, true)
+		draw_line(pp, pp + Vector2(p.aim_dir.x, p.aim_dir.z).rotated(_rot) * 9.0, player_color, 1.5, true)
 	if full and _font:
 		var title := "%s   ·   [M] CLOSE" % lvl.floor_name.to_upper()
 		if lvl.generated:

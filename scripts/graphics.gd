@@ -121,6 +121,11 @@ func apply() -> void:
 ## Point lights are the most expensive thing on weak GPUs (especially on the
 ## Compatibility renderer, which draws objects once per light). LOW hides them.
 func _apply_light(l: OmniLight3D) -> void:
+	# Lamp posts throw long shadows on HIGH only (shadowed lights are costly).
+	if l.has_meta("lamp"):
+		l.shadow_enabled = quality == Quality.HIGH
+		l.distance_fade_shadow = 26.0
+		l.shadow_bias = 0.08
 	if quality == Quality.LOW:
 		if l.visible:
 			l.set_meta("gfx_hidden", true)
@@ -131,7 +136,7 @@ func _apply_light(l: OmniLight3D) -> void:
 
 
 func _on_node_added(n: Node) -> void:
-	if quality == Quality.LOW and n is OmniLight3D:
+	if n is OmniLight3D and (quality == Quality.LOW or n.has_meta("lamp")):
 		_apply_light.call_deferred(n)
 	elif quality != Quality.HIGH and n is FogVolume:
 		(n as FogVolume).set_deferred("visible", false)

@@ -97,6 +97,11 @@ func _check_floor(lvl, where: String) -> void:
 			_fail(where, "%s placed off the deck at %s" % [p.type, p.pos])
 		if p.mode == &"patrol" and lvl.region_of(p.pos) != lvl.region_of(p.to):
 			_fail(where, "patrol crosses regions %s -> %s" % [p.pos, p.to])
+		for wp in p.get("route", []):
+			if not lvl.is_walkable(wp):
+				_fail(where, "roaming route point off the deck at %s" % wp)
+		if p.get("idle", &"") == &"feed" and Vector2(p.pos.x - p.food.x, p.pos.z - p.food.z).length() > 2.0:
+			_fail(where, "feeding bug too far from its food")
 	for t in lvl.turret_spots:
 		if not lvl.is_walkable(t.pos):
 			_fail(where, "turret off the deck at %s" % t.pos)

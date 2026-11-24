@@ -309,6 +309,8 @@ func _rebuild() -> void:
 	if generated:
 		_kit.lamp_spacing = 11.0
 	_kit.make_materials(hive_center, hive_radius, tile_size)
+	if generated and layout.get("red_rails", false):
+		_kit.rail_top_mat = _kit.mats.rail_red
 
 	_build_regions()
 	if generated:
@@ -318,6 +320,7 @@ func _rebuild() -> void:
 	_build_bridges()
 	_finish_spawn_edges()
 	_kit.void_dressing(bounds, void_fog_top, void_fog_density, void_fog_albedo, void_fog_emission)
+	_kit.flush_batches()
 	_blockers.append_array(_kit.blockers)
 	if not Engine.is_editor_hint():
 		if generated:
@@ -641,6 +644,8 @@ func _build_generated_rooms() -> void:
 	for g in layout.guides:
 		_kit.guide_line(g[0], g[1], 0.14, _kit.mats.guide_white if white else null)
 		white = not white
+	for cc in layout.carcasses:
+		_kit.carcass(cc[0], cc[1])
 	for sg in layout.shaft_glows:
 		var c: Vector3 = sg.pos
 		var size: float = sg.size
@@ -796,9 +801,13 @@ func _build_gameplay() -> void:
 
 
 func _build_placements() -> void:
-	# Catwalk Deck: a sleeping cluster by the barrels, one patrol across the middle.
-	for p in [Vector3(6.0, 0, -5.2), Vector3(7.2, 0, -4.0), Vector3(5.2, 0, -3.6), Vector3(7.8, 0, -5.8), Vector3(4.8, 0, -5.0)]:
-		_place(&"swarmer", p, &"dormant")
+	# Catwalk Deck: a pack feeding on a carcass by the barrels, one patrol across the middle.
+	var food := Vector3(6.3, 0, -4.7)
+	_kit.carcass(food, 0.6)
+	for k in 5:
+		var a := TAU * k / 5.0
+		placements.append({"type": &"swarmer", "pos": food + Vector3(cos(a), 0, sin(a)) * 1.2, "mode": &"dormant",
+			"to": Vector3.ZERO, "tier": 0, "idle": &"feed", "food": food})
 	_place(&"swarmer", Vector3(-9.0, 0, -1.0), &"patrol", Vector3(9.0, 0, -1.0))
 	# Switchgear Gallery: patrol looping the south walkway, shield bug + bursters north.
 	_place(&"swarmer", Vector3(-11.0, 0, -19.5), &"patrol", Vector3(11.0, 0, -19.5))
@@ -807,18 +816,22 @@ func _build_placements() -> void:
 	_place(&"burster", Vector3(10.4, 0, -28.6), &"dormant")
 	_place(&"burster", Vector3(9.4, 0, -27.6), &"dormant")
 	# Pressure Lock: west sleepers by the barrels; east patrol shield + sleepers.
-	for p in [Vector3(26.6, 0, -28.2), Vector3(27.6, 0, -27.0), Vector3(25.8, 0, -26.6), Vector3(28.0, 0, -29.0)]:
-		_place(&"swarmer", p, &"dormant")
+	for p in [Vector3(26.6, 0, -28.2), Vector3(27.6, 0, -26.2), Vector3(25.2, 0, -26.6), Vector3(28.4, 0, -29.4)]:
+		_place(&"swarmer", p, &"dormant", Vector3.ZERO, 0, &"burrow")
 	_place(&"shield", Vector3(36.5, 0, -28.0), &"patrol", Vector3(36.5, 0, -18.5))
 	for p in [Vector3(39.0, 0, -30.6), Vector3(38.0, 0, -31.2), Vector3(39.6, 0, -29.4)]:
 		_place(&"swarmer", p, &"dormant")
 	# Reactor Ring: guards around the uplink.
 	for p in [Vector3(31.0, 0, -63.4), Vector3(32.0, 0, -61.8), Vector3(30.2, 0, -61.6),
 			Vector3(42.0, 0, -63.4), Vector3(41.0, 0, -62.0), Vector3(43.0, 0, -62.2)]:
-		_place(&"swarmer", p, &"dormant")
+		_place(&"swarmer", p, &"dormant", Vector3.ZERO, 0, &"wander")
 	_place(&"swarmer", Vector3(36.5, 0, -61.0), &"dormant", Vector3.ZERO, Enemy.Tier.GOLD)
 	_place(&"burster", Vector3(28.0, 0, -50.0), &"patrol", Vector3(28.0, 0, -62.0))
 
 
-func _place(type: StringName, pos: Vector3, mode: StringName, to := Vector3.ZERO, tier := 0) -> void:
-	placements.append({"type": type, "pos": pos, "mode": mode, "to": to, "tier": tier})
+func _place(type: StringName, pos: Vector3, mode: StringName, to := Vector3.ZERO, tier := 0, idle_mode: StringName = &"") -> void:
+	var d := {"type": type, "pos": pos, "mode": mode, "to": to, "tier": tier}
+	if idle_mode != &"":
+		d["idle"] = idle_mode
+		d["radius"] = 2.0
+	placements.append(d)

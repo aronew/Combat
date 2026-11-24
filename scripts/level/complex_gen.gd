@@ -19,16 +19,16 @@ const CELL := 36.0
 const MARGIN := 2.5
 
 const THEMES := [
-	{"name": "Upper Decks", "lamp": Color("ffae45"), "alt": Color("ffd08a"),
+	{"name": "Upper Decks", "lamp": Color("ffc178"), "alt": Color("ffe3b8"), "red_rails": true,
 		"kinds": {"plain": 5, "block": 2, "split": 1, "hole": 2}},
-	{"name": "Switchgear Halls", "lamp": Color("7fb2ff"), "alt": Color("e8eef5"),
+	{"name": "Switchgear Halls", "lamp": Color("9cc4ff"), "alt": Color("ffd9a8"),
 		"kinds": {"plain": 2, "block": 5, "split": 2, "hole": 1}},
-	{"name": "Pump Works", "lamp": Color("4ff0e0"), "alt": Color("ffae45"),
+	{"name": "Pump Works", "lamp": Color("ffd9a8"), "alt": Color("8fe8ff"), "red_rails": true,
 		"kinds": {"plain": 3, "block": 2, "split": 3, "hole": 3}},
-	{"name": "Hive Foundry", "lamp": Color("b6ff6a"), "alt": Color("ffae45"),
+	{"name": "Hive Foundry", "lamp": Color("ffe2b0"), "alt": Color("c8ff8a"),
 		"kinds": {"plain": 3, "block": 2, "split": 2, "hole": 3}},
 ]
-const FINAL_THEME := {"name": "Reactor Core", "lamp": Color("ffae45"), "alt": Color("e8eef5"),
+const FINAL_THEME := {"name": "Reactor Core", "lamp": Color("ffb35c"), "alt": Color("e8eef5"), "red_rails": true,
 	"kinds": {"plain": 3, "block": 3, "split": 2, "hole": 2}}
 
 const NAMES := {
@@ -88,8 +88,9 @@ func generate(seed_: int, floor_idx: int, floors: int, depth: int) -> Dictionary
 
 	_out = {
 		"name": theme.name, "final": final, "floor": floor_idx, "floors": floors, "lamp": theme.lamp,
+		"red_rails": theme.get("red_rails", false),
 		"barrels": [], "nests": [], "turrets": [], "breakers": [], "lasers": [], "doors": [],
-		"crates": [], "panels": [], "guides": [], "placements": [], "shaft_glows": [],
+		"crates": [], "panels": [], "guides": [], "placements": [], "shaft_glows": [], "carcasses": [],
 		"uplink": Vector3.INF, "cargo": Vector3.INF,
 	}
 	var used_names := {}
@@ -112,6 +113,7 @@ func generate(seed_: int, floor_idx: int, floors: int, depth: int) -> Dictionary
 		if i != 0:
 			_populate(i, floor_idx, depth, final)
 	_hazard_bridges(floor_idx)
+	_roaming_packs(floor_idx, dist)
 
 	var hive := _rooms[end].center3 as Vector3
 	var best_nests := 0
@@ -565,6 +567,13 @@ func _dress_room(i: int, floor_idx: int, final: bool) -> void:
 			_out.nests.append(Vector3(spot[0].x, 0, spot[0].y))
 			_occupy(spot[0], 2.0)
 			r.nests += 1
+			# A couple of bugs tending the nest, crawling round it.
+			var nest_pos: Vector2 = spot[0]
+			for k in rng.randi_range(1, 3):
+				var a := rng.randf() * TAU
+				var tp := nest_pos + Vector2(cos(a), sin(a)) * 1.9
+				if _in_pieces(r, tp):
+					_place(&"swarmer", tp, &"dormant", Vector2.INF, 0, {"idle": &"wander", "radius": 2.2})
 	# Sentry turrets in a corner, facing into the room.
 	var turret_p := 0.12 + 0.07 * floor_idx
 	if tag != "cargo" and rng.randf() < turret_p:
@@ -628,17 +637,32 @@ func _populate(i: int, floor_idx: int, depth: int, final: bool) -> void:
 	while budget > 0.0:
 		var roll := rng.randf()
 		if roll < 0.45:
-			# A sleeping cluster.
-			var spot := _free_spot(r, 1.6, 0.8)
+			# A group of swarmers doing something: feeding on a carcass,
+			# burrowed in wait, or milling about.
+			var spot := _free_spot(r, 1.8, 1.0)
 			if spot.is_empty():
 				break
 			var c: Vector2 = spot[0]
 			var count := rng.randi_range(3, 5)
-			for k in count:
-				var p := c + Vector2(rng.randf_range(-1.6, 1.6), rng.randf_range(-1.6, 1.6))
-				if not _in_pieces(r, p):
-					p = c
-				_place(&"swarmer", p, &"dormant", Vector2.INF, 1 if rng.randf() < blue_p else 0)
+			var act := rng.randf()
+			if act < 0.4:
+				_out.carcasses.append([Vector3(c.x, 0, c.y), rng.randf() * TAU])
+				_occupy(c, 1.4)
+				var a0 := rng.randf() * TAU
+				for k in count:
+					var a := a0 + TAU * k / count + rng.randf_range(-0.3, 0.3)
+					var p := c + Vector2(cos(a), sin(a)) * rng.randf_range(1.0, 1.4)
+					if not _in_pieces(r, p):
+						continue
+					_place(&"swarmer", p, &"dormant", Vector2.INF, 1 if rng.randf() < blue_p else 0, {"idle": &"feed", "food": Vector3(c.x, 0, c.y)})
+			else:
+				var mode: StringName = &"burrow" if act < 0.7 else &"wander"
+				var spread := 2.4 if mode == &"burrow" else 1.6
+				for k in count:
+					var p := c + Vector2(rng.randf_range(-spread, spread), rng.randf_range(-spread, spread))
+					if not _in_pieces(r, p):
+						p = c
+					_place(&"swarmer", p, &"dormant", Vector2.INF, 1 if rng.randf() < blue_p else 0, {"idle": mode, "radius": 2.5})
 			budget -= count * 0.8
 		elif roll < 0.68:
 			# A patrol walking the length of one walkway.
@@ -659,15 +683,17 @@ func _populate(i: int, floor_idx: int, depth: int, final: bool) -> void:
 			var spot := _free_spot(r, 1.6, 0.8)
 			if spot.is_empty():
 				break
-			_place(&"burster", spot[0], &"dormant", Vector2.INF, 0)
+			var b_idle := {"idle": &"burrow"} if rng.randf() < 0.5 else {"idle": &"wander", "radius": 2.0}
+			_place(&"burster", spot[0], &"dormant", Vector2.INF, 0, b_idle)
 			if _in_pieces(r, spot[0] + Vector2(1.0, 0.4)):
-				_place(&"burster", spot[0] + Vector2(1.0, 0.4), &"dormant", Vector2.INF, 0)
+				_place(&"burster", spot[0] + Vector2(1.0, 0.4), &"dormant", Vector2.INF, 0, b_idle)
 			budget -= 2.0
 		elif roll < 0.94:
 			var spot := _free_spot(r, 1.8, 0.8)
 			if spot.is_empty():
 				break
-			_place(&"shield", spot[0], &"dormant", Vector2.INF, 1 if rng.randf() < blue_p * 2.0 else 0)
+			_place(&"shield", spot[0], &"dormant", Vector2.INF, 1 if rng.randf() < blue_p * 2.0 else 0,
+				{"idle": &"wander", "radius": 3.0} if rng.randf() < 0.6 else {})
 			budget -= 2.5
 		else:
 			if floor_idx == 0 and not final:
@@ -676,10 +702,50 @@ func _populate(i: int, floor_idx: int, depth: int, final: bool) -> void:
 			var spot := _free_spot(r, 1.6, 0.8)
 			if spot.is_empty():
 				break
-			_place(&"swarmer", spot[0], &"dormant", Vector2.INF, 2)
+			_place(&"swarmer", spot[0], &"dormant", Vector2.INF, 2, {"idle": &"wander", "radius": 1.8})
 			budget -= 3.0
 
 
-func _place(type: StringName, p: Vector2, mode: StringName, to: Vector2, tier: int) -> void:
+func _place(type: StringName, p: Vector2, mode: StringName, to: Vector2, tier: int, extra := {}) -> void:
 	var to3 := Vector3.ZERO if to == Vector2.INF else Vector3(to.x, 0, to.y)
-	_out.placements.append({"type": type, "pos": Vector3(p.x, 0, p.y), "mode": mode, "to": to3, "tier": tier})
+	var d := {"type": type, "pos": Vector3(p.x, 0, p.y), "mode": mode, "to": to3, "tier": tier}
+	d.merge(extra)
+	_out.placements.append(d)
+
+
+## Packs that walk a loop through a few neighbouring rooms (never the arrival room).
+func _roaming_packs(floor_idx: int, dist: Array[int]) -> void:
+	var packs := mini(1 + floor_idx, 3)
+	for k in packs:
+		var cands: Array[int] = []
+		for i in _rooms.size():
+			if i != 0 and dist[i] >= 2:
+				cands.append(i)
+		if cands.is_empty():
+			return
+		var cur: int = cands[rng.randi_range(0, cands.size() - 1)]
+		var stops: Array[int] = [cur]
+		for step in rng.randi_range(2, 3):
+			var nbs: Array[int] = []
+			for nb in _neighbors(cur):
+				if nb != 0 and not stops.has(nb):
+					nbs.append(nb)
+			if nbs.is_empty():
+				break
+			cur = nbs[rng.randi_range(0, nbs.size() - 1)]
+			stops.append(cur)
+		if stops.size() < 2:
+			continue
+		var route: Array[Vector3] = []
+		for ri in stops:
+			var sp := _free_spot(_rooms[ri], 2.0, 0.0)
+			if not sp.is_empty():
+				route.append(Vector3(sp[0].x, 0, sp[0].y))
+		if route.size() < 2:
+			continue
+		var start := Vector2(route[0].x, route[0].z)
+		for m in rng.randi_range(2, 4):
+			var p := start + Vector2(rng.randf_range(-1.0, 1.0), rng.randf_range(-1.0, 1.0))
+			if not _in_pieces(_rooms[stops[0]], p):
+				p = start
+			_place(&"swarmer", p, &"dormant", Vector2.INF, 0, {"idle": &"roam", "route": route})
