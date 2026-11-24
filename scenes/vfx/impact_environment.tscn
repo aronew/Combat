@@ -115,22 +115,22 @@ gravity = Vector3(0, -18, 0)
 [sub_resource type="BoxMesh" id="BoxMesh_rdkdm"]
 size = Vector3(0.05, 0.03, 0.05)
 
-[node name="ImpactEnvironment" type="Node3D" unique_id=1200214598]
+[node name="ImpactEnvironment" type="Node3D" unique_id=912645974]
 script = ExtResource("1_d4lpj")
 duration = 0.9
 profile = ExtResource("2_ouyar")
 
-[node name="Flash" type="MeshInstance3D" parent="." unique_id=229410538]
+[node name="Flash" type="MeshInstance3D" parent="." unique_id=1478758404]
 material_override = SubResource("ShaderMaterial_v1hjv")
 cast_shadow = 0
 mesh = SubResource("QuadMesh_ecwu8")
 
-[node name="Pulse" type="Node" parent="Flash" unique_id=934166632]
+[node name="Pulse" type="Node" parent="Flash" unique_id=1465201111]
 script = ExtResource("4_tfgjd")
 life = 0.04
 scale_to = Vector3(0.4, 0.4, 0.4)
 
-[node name="Sparks" type="GPUParticles3D" parent="." unique_id=1681484861]
+[node name="Sparks" type="GPUParticles3D" parent="." unique_id=1114008646]
 material_override = SubResource("ShaderMaterial_kbflc")
 cast_shadow = 0
 emitting = false
@@ -145,7 +145,7 @@ process_material = SubResource("ParticleProcessMaterial_4rfc4")
 draw_pass_1 = SubResource("QuadMesh_pl4ti")
 metadata/keep_color = true
 
-[node name="Dust" type="GPUParticles3D" parent="." unique_id=117481580]
+[node name="Dust" type="GPUParticles3D" parent="." unique_id=1474887398]
 material_override = SubResource("ShaderMaterial_5bo2m")
 cast_shadow = 0
 emitting = false
@@ -159,7 +159,7 @@ process_material = SubResource("ParticleProcessMaterial_16f7w")
 draw_pass_1 = SubResource("QuadMesh_ceo2g")
 metadata/keep_color = true
 
-[node name="Debris" type="GPUParticles3D" parent="." unique_id=1909257502]
+[node name="Debris" type="GPUParticles3D" parent="." unique_id=1211640152]
 material_override = SubResource("StandardMaterial3D_54t4k")
 cast_shadow = 0
 emitting = false
