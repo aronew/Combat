@@ -20,7 +20,7 @@ extends Node3D
 @export var lamp_energy := 3.2
 @export var lamp_range := 7.0
 @export var lamp_emission := 6.0
-@export var lamp_fog_energy := 1.5
+@export var lamp_fog_energy := 0.7
 
 @export_group("Room lighting")
 @export var lift_lamp_color := Color("ffae45")
@@ -32,8 +32,8 @@ extends Node3D
 @export_group("Void")
 @export var void_fog_density := 0.04
 @export var void_fog_top := -2.5
-@export var void_fog_albedo := Color("b4dcd8")
-@export var void_fog_emission := Color("127078")
+@export var void_fog_albedo := Color("a8ccd2")
+@export var void_fog_emission := Color("10667a")
 
 const ROOMS := [
 	{"id": &"lift", "name": "Drop Lift", "rect": Rect2(-5, 12, 10, 8)},
@@ -465,9 +465,9 @@ func _dress_lift(r: Rect2) -> void:
 	_kit.hazard_panel(Vector2(6.0, 5.0), Vector3(lift_position.x, 0, lift_position.z))
 	_kit.guide_line(Vector3(-2.0, 0, 9.0), Vector3(-2.0, 0, 13.4))
 	_kit.guide_line(Vector3(2.0, 0, 9.0), Vector3(2.0, 0, 13.4))
-	# Lift shaft housing behind the pad.
-	_kit.box(Vector3(10.0, 5.0, 1.2), Vector3(0, 2.0, r.end.y + 0.6), _kit.mats.machine, true)
-	_kit.box(Vector3(6.0, 0.18, 0.06), Vector3(0, 3.6, r.end.y - 0.02), _kit.mats.amber_strip, false, 0.0, false)
+	# Low lift winch housing behind the pad (kept low so it never blocks the camera).
+	_kit.box(Vector3(10.0, 1.4, 1.2), Vector3(0, 0.2, r.end.y + 0.6), _kit.mats.machine, true)
+	_kit.box(Vector3(6.0, 0.12, 0.06), Vector3(0, 0.7, r.end.y - 0.02), _kit.mats.amber_strip, false, 0.0, false)
 
 
 func _dress_deck(r: Rect2) -> void:

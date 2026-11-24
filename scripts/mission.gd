@@ -269,8 +269,8 @@ func _build_markers() -> void:
 	_zone_mat = ShaderMaterial.new()
 	_zone_mat.shader = shader
 	_zone_mat.set_shader_parameter("tint", Color("19f4ff"))
-	_zone_mat.set_shader_parameter("energy", 2.5)
-	_zone_mat.set_shader_parameter("fade", 0.8)
+	_zone_mat.set_shader_parameter("energy", 1.1)
+	_zone_mat.set_shader_parameter("fade", 0.55)
 	_zone_ring.material_override = _zone_mat
 	_zone_ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_zone_ring.top_level = true

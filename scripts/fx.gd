@@ -141,7 +141,7 @@ func on_enemy_land(pos: Vector3, heavy: bool) -> void:
 func on_blocked(pos: Vector3, direction: Vector3) -> void:
 	spark(pos, Color("3aa0ff"), -direction)
 	var now := Time.get_ticks_usec()
-	if now - _last_block_usec > 250000:
+	if now - _last_block_usec > 600000:
 		_last_block_usec = now
 		text_popup(pos + Vector3.UP * 0.6, "BLOCKED", Color("6fb6ff"), 0.8)
 

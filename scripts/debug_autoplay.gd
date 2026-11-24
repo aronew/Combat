@@ -215,7 +215,7 @@ func _report_stalls(sp: Spawner) -> void:
 		var rec = _stall.get(id)
 		if rec == null or e.global_position.distance_to(rec[0]) > 0.75:
 			_stall[id] = [e.global_position, _t]
-		elif _t - rec[1] >= 3.0 and Game.player and e.global_position.distance_to(Game.player.global_position) > 2.5:
+		elif _t - rec[1] >= 3.0 and Game.player and e.global_position.distance_to(Game.player.global_position) > 2.5 + e.contact_range * Enemy.TIER_SCALE[e.tier] + e.get_hit_radius():
 			print("   [stall] %s stuck %.1fs at %s (room %s)" % [e.type_id, _t - rec[1], e.global_position.snapped(Vector3.ONE * 0.1), Game.level.room_of(e.global_position)])
 	for id in _stall.keys():
 		if not seen.has(id):
