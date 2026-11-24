@@ -1,0 +1,225 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scripts/player.gd" id="1_player"]
+[ext_resource type="Shader" path="res://scripts/shaders/neon_fade.gdshader" id="2_fade"]
+
+[sub_resource type="CapsuleShape3D" id="Shape_body"]
+radius = 0.4
+height = 1.8
+
+[sub_resource type="StandardMaterial3D" id="Mat_armor"]
+albedo_color = Color(0.29, 0.31, 0.34, 1)
+metallic = 0.6
+roughness = 0.42
+
+[sub_resource type="StandardMaterial3D" id="Mat_dark"]
+albedo_color = Color(0.11, 0.12, 0.135, 1)
+metallic = 0.4
+roughness = 0.6
+
+[sub_resource type="StandardMaterial3D" id="Mat_orange"]
+albedo_color = Color(0.85, 0.4, 0.165, 1)
+metallic = 0.2
+roughness = 0.5
+emission_enabled = true
+emission = Color(0.85, 0.4, 0.165, 1)
+emission_energy_multiplier = 0.15
+
+[sub_resource type="StandardMaterial3D" id="Mat_white"]
+albedo_color = Color(0.9, 0.91, 0.92, 1)
+roughness = 0.5
+
+[sub_resource type="StandardMaterial3D" id="Mat_visor"]
+albedo_color = Color(0.05, 0.2, 0.22, 1)
+emission_enabled = true
+emission = Color(0.247, 0.941, 1, 1)
+emission_energy_multiplier = 7.0
+
+[sub_resource type="ShaderMaterial" id="Mat_flash"]
+render_priority = 2
+shader = ExtResource("2_fade")
+shader_parameter/tint = Color(0.6, 0.98, 1, 1)
+shader_parameter/energy = 7.0
+shader_parameter/fade = 1.0
+shader_parameter/edge_softness = 0.6
+
+[sub_resource type="ShaderMaterial" id="Mat_ring"]
+render_priority = 1
+shader = ExtResource("2_fade")
+shader_parameter/tint = Color(0.098, 0.957, 1, 1)
+shader_parameter/energy = 1.4
+shader_parameter/fade = 0.55
+shader_parameter/edge_softness = 0.0
+
+[sub_resource type="CapsuleMesh" id="Mesh_body"]
+radius = 0.33
+height = 1.45
+
+[sub_resource type="BoxMesh" id="Mesh_torso"]
+size = Vector3(0.74, 0.52, 0.44)
+
+[sub_resource type="BoxMesh" id="Mesh_chest"]
+size = Vector3(0.46, 0.26, 0.08)
+
+[sub_resource type="SphereMesh" id="Mesh_head"]
+radius = 0.23
+height = 0.46
+
+[sub_resource type="BoxMesh" id="Mesh_visor"]
+size = Vector3(0.3, 0.06, 0.08)
+
+[sub_resource type="BoxMesh" id="Mesh_helmet_stripe"]
+size = Vector3(0.09, 0.05, 0.38)
+
+[sub_resource type="BoxMesh" id="Mesh_shoulder"]
+size = Vector3(0.3, 0.22, 0.42)
+
+[sub_resource type="BoxMesh" id="Mesh_chevron"]
+size = Vector3(0.31, 0.04, 0.09)
+
+[sub_resource type="BoxMesh" id="Mesh_backpack"]
+size = Vector3(0.5, 0.55, 0.24)
+
+[sub_resource type="BoxMesh" id="Mesh_pack_light"]
+size = Vector3(0.07, 0.28, 0.03)
+
+[sub_resource type="BoxMesh" id="Mesh_thigh"]
+size = Vector3(0.17, 0.3, 0.22)
+
+[sub_resource type="BoxMesh" id="Mesh_gun"]
+size = Vector3(0.13, 0.15, 0.85)
+
+[sub_resource type="BoxMesh" id="Mesh_gun_strip"]
+size = Vector3(0.04, 0.03, 0.5)
+
+[sub_resource type="SphereMesh" id="Mesh_flash"]
+radius = 0.2
+height = 0.4
+radial_segments = 8
+rings = 4
+
+[sub_resource type="TorusMesh" id="Mesh_ring"]
+inner_radius = 0.78
+outer_radius = 0.86
+rings = 40
+ring_segments = 3
+
+[node name="Player" type="CharacterBody3D"]
+collision_layer = 2
+collision_mask = 1
+motion_mode = 1
+script = ExtResource("1_player")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+position = Vector3(0, 0.95, 0)
+shape = SubResource("Shape_body")
+
+[node name="GroundRing" type="MeshInstance3D" parent="."]
+position = Vector3(0, 0.03, 0)
+scale = Vector3(1, 0.2, 1)
+cast_shadow = 0
+mesh = SubResource("Mesh_ring")
+material_override = SubResource("Mat_ring")
+
+[node name="Visual" type="Node3D" parent="."]
+
+[node name="Body" type="MeshInstance3D" parent="Visual"]
+position = Vector3(0, 0.78, 0)
+mesh = SubResource("Mesh_body")
+material_override = SubResource("Mat_dark")
+
+[node name="Torso" type="MeshInstance3D" parent="Visual"]
+position = Vector3(0, 1.2, 0)
+mesh = SubResource("Mesh_torso")
+material_override = SubResource("Mat_armor")
+
+[node name="ChestPlate" type="MeshInstance3D" parent="Visual"]
+position = Vector3(0, 1.24, -0.23)
+mesh = SubResource("Mesh_chest")
+material_override = SubResource("Mat_white")
+
+[node name="Head" type="MeshInstance3D" parent="Visual"]
+position = Vector3(0, 1.68, 0)
+mesh = SubResource("Mesh_head")
+material_override = SubResource("Mat_armor")
+
+[node name="Visor" type="MeshInstance3D" parent="Visual"]
+position = Vector3(0, 1.7, -0.19)
+cast_shadow = 0
+mesh = SubResource("Mesh_visor")
+material_override = SubResource("Mat_visor")
+
+[node name="HelmetStripe" type="MeshInstance3D" parent="Visual"]
+position = Vector3(0, 1.9, 0.02)
+mesh = SubResource("Mesh_helmet_stripe")
+material_override = SubResource("Mat_orange")
+
+[node name="ShoulderL" type="MeshInstance3D" parent="Visual"]
+position = Vector3(-0.5, 1.4, 0)
+rotation_degrees = Vector3(0, 0, 18)
+mesh = SubResource("Mesh_shoulder")
+material_override = SubResource("Mat_orange")
+
+[node name="ChevronL" type="MeshInstance3D" parent="Visual/ShoulderL"]
+position = Vector3(0, 0.11, -0.06)
+mesh = SubResource("Mesh_chevron")
+material_override = SubResource("Mat_white")
+
+[node name="ShoulderR" type="MeshInstance3D" parent="Visual"]
+position = Vector3(0.5, 1.4, 0)
+rotation_degrees = Vector3(0, 0, -18)
+mesh = SubResource("Mesh_shoulder")
+material_override = SubResource("Mat_orange")
+
+[node name="ChevronR" type="MeshInstance3D" parent="Visual/ShoulderR"]
+position = Vector3(0, 0.11, -0.06)
+mesh = SubResource("Mesh_chevron")
+material_override = SubResource("Mat_white")
+
+[node name="Backpack" type="MeshInstance3D" parent="Visual"]
+position = Vector3(0, 1.2, 0.32)
+mesh = SubResource("Mesh_backpack")
+material_override = SubResource("Mat_dark")
+
+[node name="PackLight" type="MeshInstance3D" parent="Visual/Backpack"]
+position = Vector3(0, 0.02, 0.125)
+cast_shadow = 0
+mesh = SubResource("Mesh_pack_light")
+material_override = SubResource("Mat_visor")
+
+[node name="ThighL" type="MeshInstance3D" parent="Visual"]
+position = Vector3(-0.22, 0.5, -0.06)
+mesh = SubResource("Mesh_thigh")
+material_override = SubResource("Mat_orange")
+
+[node name="ThighR" type="MeshInstance3D" parent="Visual"]
+position = Vector3(0.22, 0.5, -0.06)
+mesh = SubResource("Mesh_thigh")
+material_override = SubResource("Mat_orange")
+
+[node name="Gun" type="MeshInstance3D" parent="Visual"]
+position = Vector3(0.3, 1.08, -0.42)
+mesh = SubResource("Mesh_gun")
+material_override = SubResource("Mat_dark")
+
+[node name="GunStrip" type="MeshInstance3D" parent="Visual/Gun"]
+position = Vector3(0, 0.085, -0.05)
+cast_shadow = 0
+mesh = SubResource("Mesh_gun_strip")
+material_override = SubResource("Mat_visor")
+
+[node name="Muzzle" type="Marker3D" parent="Visual"]
+position = Vector3(0.3, 1.1, -0.95)
+
+[node name="MuzzleFlash" type="MeshInstance3D" parent="Visual"]
+position = Vector3(0.3, 1.1, -1.0)
+scale = Vector3(1, 1, 2.2)
+cast_shadow = 0
+mesh = SubResource("Mesh_flash")
+material_override = SubResource("Mat_flash")
+
+[node name="MuzzleLight" type="OmniLight3D" parent="Visual"]
+position = Vector3(0.3, 1.2, -1.1)
+light_color = Color(0.3, 0.95, 1, 1)
+light_energy = 0.0
+omni_range = 5.0

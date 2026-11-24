@@ -1,0 +1,265 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scripts/hud.gd" id="1_hud"]
+[ext_resource type="Shader" path="res://scripts/shaders/vignette.gdshader" id="2_vig"]
+[ext_resource type="Script" path="res://scripts/crosshair.gd" id="3_cross"]
+[ext_resource type="Script" path="res://scripts/health_bar.gd" id="4_bar"]
+[ext_resource type="Script" path="res://scripts/wave_ring.gd" id="5_ring"]
+[ext_resource type="Script" path="res://scripts/dash_box.gd" id="6_dash"]
+
+[sub_resource type="ShaderMaterial" id="Mat_vignette"]
+shader = ExtResource("2_vig")
+shader_parameter/color = Color(1, 0.08, 0.2, 1)
+shader_parameter/intensity = 0.0
+
+[node name="HUD" type="CanvasLayer"]
+script = ExtResource("1_hud")
+
+[node name="Vignette" type="ColorRect" parent="."]
+material = SubResource("Mat_vignette")
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="Health" type="Control" parent="."]
+layout_mode = 3
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 56.0
+offset_top = -122.0
+offset_right = 456.0
+offset_bottom = -48.0
+grow_vertical = 0
+mouse_filter = 2
+
+[node name="Numbers" type="HBoxContainer" parent="Health"]
+layout_mode = 0
+offset_left = 16.0
+offset_right = 316.0
+offset_bottom = 46.0
+mouse_filter = 2
+theme_override_constants/separation = 0
+
+[node name="Value" type="Label" parent="Health/Numbers"]
+layout_mode = 2
+size_flags_vertical = 8
+text = "100"
+
+[node name="Max" type="Label" parent="Health/Numbers"]
+layout_mode = 2
+size_flags_vertical = 8
+text = " / 100"
+
+[node name="Bar" type="Control" parent="Health"]
+layout_mode = 0
+offset_top = 52.0
+offset_right = 400.0
+offset_bottom = 70.0
+mouse_filter = 2
+script = ExtResource("4_bar")
+
+[node name="WaveRing" type="Control" parent="."]
+layout_mode = 3
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -46.0
+offset_top = 22.0
+offset_right = 46.0
+offset_bottom = 114.0
+grow_horizontal = 2
+mouse_filter = 2
+script = ExtResource("5_ring")
+
+[node name="Count" type="Label" parent="WaveRing"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+text = "24"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="WaveLabel" type="Label" parent="."]
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -160.0
+offset_top = 118.0
+offset_right = 160.0
+offset_bottom = 144.0
+grow_horizontal = 2
+text = "WAVE 1"
+horizontal_alignment = 1
+
+[node name="Dash" type="Control" parent="."]
+layout_mode = 3
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -124.0
+offset_top = 30.0
+offset_right = -52.0
+offset_bottom = 130.0
+grow_horizontal = 0
+mouse_filter = 2
+
+[node name="Box" type="Control" parent="Dash"]
+layout_mode = 0
+offset_right = 72.0
+offset_bottom = 72.0
+mouse_filter = 2
+script = ExtResource("6_dash")
+
+[node name="Cooldown" type="Label" parent="Dash/Box"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="Key" type="Label" parent="Dash"]
+layout_mode = 0
+offset_left = -24.0
+offset_top = 78.0
+offset_right = 96.0
+offset_bottom = 100.0
+text = "SPACE"
+horizontal_alignment = 1
+
+[node name="Kills" type="Label" parent="."]
+offset_left = 56.0
+offset_top = 34.0
+offset_right = 356.0
+offset_bottom = 60.0
+text = "KILLS  0"
+
+[node name="Combo" type="Label" parent="."]
+offset_left = 50.0
+offset_top = 60.0
+offset_right = 470.0
+offset_bottom = 120.0
+text = "COMBO x3"
+
+[node name="Banner" type="Control" parent="."]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="Title" type="Label" parent="Banner"]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -600.0
+offset_top = -190.0
+offset_right = 600.0
+offset_bottom = -50.0
+grow_horizontal = 2
+grow_vertical = 2
+text = "WAVE 1"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="Sub" type="Label" parent="Banner"]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -600.0
+offset_top = -50.0
+offset_right = 600.0
+offset_bottom = -10.0
+grow_horizontal = 2
+grow_vertical = 2
+text = "24 SWARMERS INBOUND"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="GameOver" type="Control" parent="."]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="Dim" type="ColorRect" parent="GameOver"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0.01, 0.03, 0.04, 0.62)
+
+[node name="Box" type="VBoxContainer" parent="GameOver"]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -600.0
+offset_top = -200.0
+offset_right = 600.0
+offset_bottom = 200.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+theme_override_constants/separation = 10
+alignment = 1
+
+[node name="Title" type="Label" parent="GameOver/Box"]
+layout_mode = 2
+text = "GAME OVER"
+horizontal_alignment = 1
+
+[node name="Wave" type="Label" parent="GameOver/Box"]
+layout_mode = 2
+text = "REACHED WAVE 1"
+horizontal_alignment = 1
+
+[node name="Kills" type="Label" parent="GameOver/Box"]
+layout_mode = 2
+text = "0 KILLS"
+horizontal_alignment = 1
+
+[node name="Spacer" type="Control" parent="GameOver/Box"]
+custom_minimum_size = Vector2(0, 24)
+layout_mode = 2
+mouse_filter = 2
+
+[node name="Hint" type="Label" parent="GameOver/Box"]
+layout_mode = 2
+text = "PRESS  R  TO RESTART"
+horizontal_alignment = 1
+
+[node name="Crosshair" type="Control" parent="."]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("3_cross")

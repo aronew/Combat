@@ -1,0 +1,47 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scripts/projectile.gd" id="1_proj"]
+[ext_resource type="Shader" path="res://scripts/shaders/neon_fade.gdshader" id="2_fade"]
+
+[sub_resource type="ShaderMaterial" id="Mat_glow"]
+render_priority = 1
+shader = ExtResource("2_fade")
+shader_parameter/tint = Color(0.098, 0.957, 1, 1)
+shader_parameter/energy = 3.0
+shader_parameter/fade = 1.0
+shader_parameter/edge_softness = 0.5
+
+[sub_resource type="ShaderMaterial" id="Mat_core"]
+render_priority = 2
+shader = ExtResource("2_fade")
+shader_parameter/tint = Color(0.85, 1, 1, 1)
+shader_parameter/energy = 4.0
+shader_parameter/fade = 1.0
+shader_parameter/edge_softness = 0.0
+
+[sub_resource type="CapsuleMesh" id="Mesh_glow"]
+radius = 0.11
+height = 1.0
+radial_segments = 8
+rings = 2
+
+[sub_resource type="CapsuleMesh" id="Mesh_core"]
+radius = 0.045
+height = 0.75
+radial_segments = 6
+rings = 2
+
+[node name="Projectile" type="Node3D"]
+script = ExtResource("1_proj")
+
+[node name="Glow" type="MeshInstance3D" parent="."]
+rotation_degrees = Vector3(90, 0, 0)
+cast_shadow = 0
+mesh = SubResource("Mesh_glow")
+material_override = SubResource("Mat_glow")
+
+[node name="Core" type="MeshInstance3D" parent="."]
+rotation_degrees = Vector3(90, 0, 0)
+cast_shadow = 0
+mesh = SubResource("Mesh_core")
+material_override = SubResource("Mat_core")
