@@ -69,6 +69,11 @@ var nests: Array[HiveNest] = []
 var turret_spots: Array[Dictionary] = []
 
 var _kit: LevelKit
+
+
+## The deck material (Graphics swaps its shader for a cheaper one on LOW).
+func floor_material() -> ShaderMaterial:
+	return _kit.mats.get("floor") if _kit else null
 var _adj: Array = []  # region -> Array of portal indices
 var _next: Array = []  # [from][to] -> portal index (or -1)
 var _blockers: Array[Vector3] = []

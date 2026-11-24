@@ -197,6 +197,8 @@ func on_blocked(pos: Vector3, direction: Vector3) -> void:
 ## Big fiery blast with a light flash (barrels, bursters).
 func explosion(pos: Vector3, size := 2.0) -> void:
 	burst(pos, Vector3.ZERO, size, Color("ff8a1e"), true)
+	if Graphics.is_low():
+		return  # point lights are the expensive part on weak GPUs
 	var l := _lights[_light_i]
 	_light_t[_light_i] = 0.3
 	_light_i = (_light_i + 1) % _lights.size()

@@ -16,6 +16,11 @@ var stations := {}  ## "armory" / "fabricator" / "augments" / "contracts" -> Int
 var _kit: LevelKit
 
 
+## The deck material (Graphics swaps its shader for a cheaper one on LOW).
+func floor_material() -> ShaderMaterial:
+	return _kit.mats.get("floor") if _kit else null
+
+
 func _ready() -> void:
 	_rebuild()
 

@@ -17,6 +17,10 @@ var _pierced := 0
 var _p := {}
 var _ray := PhysicsRayQueryParameters3D.new()
 
+## Shared materials per bolt colour: [glow, core]. A handful of colours exist
+## (one per gun archetype), so this stays tiny and needs no per-instance uniforms.
+static var _mats := {}
+
 @onready var glow: MeshInstance3D = $Glow
 @onready var core: MeshInstance3D = $Core
 
@@ -35,13 +39,25 @@ func launch(origin: Vector3, direction: Vector3, speed: float, lifetime: float, 
 	_p = payload
 	look_at(origin + _velocity, Vector3.UP)
 	var c: Color = payload.get("color", Color("19f4ff"))
-	glow.set_instance_shader_parameter("bolt_tint", c)
-	core.set_instance_shader_parameter("bolt_tint", c)
+	var m: Array = _material_for(c)
+	glow.material_override = m[0]
+	core.material_override = m[1]
 	var s: float = payload.get("scale", 1.0)
 	scale = Vector3(s, s, s * (1.0 + 0.4 * (s - 1.0)))
 	active = true
 	visible = true
 	set_physics_process(true)
+
+
+func _material_for(c: Color) -> Array:
+	var key := c.to_html()
+	if not _mats.has(key):
+		var g: ShaderMaterial = glow.material_override.duplicate()
+		var k: ShaderMaterial = core.material_override.duplicate()
+		g.set_shader_parameter("bolt_tint", c)
+		k.set_shader_parameter("bolt_tint", c)
+		_mats[key] = [g, k]
+	return _mats[key]
 
 
 func deactivate() -> void:
