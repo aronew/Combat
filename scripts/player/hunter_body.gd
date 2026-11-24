@@ -51,6 +51,16 @@ const UPPER_BONES := ["Spine01", "Spine", "neck", "Head", "head_end", "headfront
 @export var rim_strength := 1.1
 ## Heroes are drawn a little larger than life so they read from the high camera.
 @export var body_scale := 1.12
+@export_group("Troubleshooting")
+## Switches for the extras the hunter adds on top of the model, to narrow down a rendering
+## problem on a particular GPU: untick one at a time and see which one fixes it.
+@export var use_rim_pass := true
+@export var use_rim_light := true
+@export var use_ghosts := true
+## Use a fixed, generous bounding box for culling instead of the one computed from the
+## animated skin (a bad computed box can make the character vanish).
+@export var fixed_bounds := true
+@export_group("")
 
 var skeleton: Skeleton3D
 var anim: AnimationPlayer
@@ -85,12 +95,16 @@ func _ready() -> void:
 	add_child(_model)
 	skeleton = _model.find_child("Skeleton3D", true, false)
 	anim = _model.find_child("AnimationPlayer", true, false)
-	_tune_materials(_model, true)
+	_tune_materials(_model, use_rim_pass)
+	if fixed_bounds:
+		for m in _model.find_children("*", "MeshInstance3D", true, false):
+			(m as MeshInstance3D).custom_aabb = AABB(Vector3(-1.5, -0.5, -1.5), Vector3(3.0, 3.0, 3.0))
 	_build_tree()
 	_fit_weapons()
 	_tune_materials(rifle)
 	_tune_materials(blade)
-	_add_rim_light()
+	if use_rim_light:
+		_add_rim_light()
 	set_rifle_mode(true)
 	ok = skeleton != null and tree != null and rifle != null and blade != null
 
@@ -188,6 +202,8 @@ func revive() -> void:
 # --------------------------------------------------------------------------
 
 func build_ghosts(count: int, material: Material) -> void:
+	if not use_ghosts:
+		return
 	for i in count:
 		var g: Node3D = MODEL.instantiate()
 		var ap := g.find_child("AnimationPlayer", true, false)

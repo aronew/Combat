@@ -51,6 +51,13 @@ enum Weapon { RIFLE, BLADE }
 @export var bolt_height := 1.1
 ## Use the animated hunter model (false keeps the old placeholder body).
 @export var use_hunter := true
+@export_group("Hunter troubleshooting")
+## Untick one at a time to find which part of the hunter a GPU has trouble with.
+@export var hunter_rim_pass := true
+@export var hunter_rim_light := true
+@export var hunter_ghosts := true
+@export var hunter_fixed_bounds := true
+@export_group("")
 
 @export_group("Blade")
 @export var blade_combo_window := 0.6
@@ -241,6 +248,10 @@ func _ready() -> void:
 	if use_hunter:
 		body = HunterBody.new()
 		body.name = "Hunter"
+		body.use_rim_pass = hunter_rim_pass
+		body.use_rim_light = hunter_rim_light
+		body.use_ghosts = hunter_ghosts
+		body.fixed_bounds = hunter_fixed_bounds
 		visual.add_child(body)
 		if body.ok:
 			for part in PLACEHOLDER_PARTS:
