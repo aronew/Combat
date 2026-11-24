@@ -23,6 +23,8 @@ const TIER_SALVAGE := [1, 3, 6, 30]
 @export_group("Identity")
 @export var type_id: StringName = &"swarmer"
 @export var display_name := "Swarmer"
+## Colour of the bug's blood: hit sprays, floor splats.
+@export var ichor_color := Color("ffb03b")
 
 @export_group("Stats")
 @export var base_health := 30.0
@@ -145,11 +147,27 @@ var _anim_lock := 0.0
 static var _aura_mats := {}
 
 @onready var visual: Node3D = $Visual
+## Hit reactions: the model sits under a "Flinch" node that tilts away from each
+## hit and squashes; heavy hits (knockback at or over the threshold, counters)
+## stagger the bug briefly: no steering, no bites.
+@export_group("Hit reactions")
+@export var stagger_threshold := 9.0
+@export var stagger_time := 0.28
+var _flinch_node: Node3D
+var _flinch := Vector2.ZERO
+var _flinch_sq := 0.0
+var _stagger_t := 0.0
 
 
 func _ready() -> void:
 	_los_query.collision_mask = 1
 	_los_query.exclude = [get_rid()]
+	_flinch_node = Node3D.new()
+	_flinch_node.name = "Flinch"
+	var kids := visual.get_children()
+	visual.add_child(_flinch_node)
+	for c in kids:
+		c.reparent(_flinch_node, false)
 	for n in visual.find_children("*", "GeometryInstance3D", true, false):
 		_flash_targets.append(n)
 	_anim = visual.find_child("AnimationPlayer", true, false) as AnimationPlayer
@@ -260,6 +278,9 @@ func _activate(health_mult: float, speed_mult: float) -> void:
 	visual.position = Vector3.ZERO
 	visual.rotation = Vector3.ZERO
 	_anim_lock = 0.0
+	_flinch = Vector2.ZERO
+	_flinch_sq = 0.0
+	_stagger_t = 0.0
 	if _anim and _anim.has_animation(&"idle"):
 		_anim.play(&"idle")
 		_anim.seek(randf() * _anim.current_animation_length, true)
@@ -455,6 +476,8 @@ func set_separation(v: Vector3) -> void:
 
 func _physics_process(delta: float) -> void:
 	_state_t += delta
+	_stagger_t = maxf(_stagger_t - delta, 0.0)
+	_update_flinch(delta)
 	if _flash_t > 0.0:
 		_flash_t -= delta
 		if _flash_t <= 0.0:
@@ -483,7 +506,10 @@ func _physics_process(delta: float) -> void:
 		State.DROP:
 			_tick_drop()
 		State.CHASE:
-			_tick_chase(delta)
+			if _stagger_t > 0.0:
+				_settle(delta)
+			else:
+				_tick_chase(delta)
 
 
 func _tick_patrol(delta: float) -> void:
@@ -696,11 +722,22 @@ func take_hit(damage: float, direction: Vector3, knockback: float, _source_team:
 	push = push.normalized() if push.length_squared() > 0.0001 else Vector3.ZERO
 	_knock += push * knockback * (1.0 - knockback_resistance)
 	_move_vel *= hit_stagger
+	# Visible reaction: tilt the model away from the hit, squash it, maybe stagger.
+	var kb := knockback * (1.0 - knockback_resistance)
+	var amt := clampf(kb / 12.0, 0.12, 0.55)
+	if kind == &"burn":
+		amt = 0.0
+	var local := Basis(Vector3.UP, visual.rotation.y).inverse() * push
+	_flinch += Vector2(local.z, -local.x) * amt
+	_flinch = _flinch.limit_length(0.7)
+	_flinch_sq = maxf(_flinch_sq, amt)
+	if kb >= stagger_threshold or kind == &"counter":
+		_stagger_t = maxf(_stagger_t, stagger_time * (1.0 - knockback_resistance))
 	if _bite_t >= 0.0 and kind in [&"slash", &"slash_crit", &"counter"]:
 		_end_bite()  # blade hits interrupt a bite
 	var killed := health <= 0.0
 	if Game.fx and kind != &"silent":
-		Game.fx.on_enemy_hit(global_position, dealt, killed, kind)
+		Game.fx.on_enemy_hit(global_position, dealt, killed, kind, get_instance_id())
 	if killed:
 		_die(push, kind)
 	elif is_unaware() and kind != &"silent":
@@ -713,7 +750,9 @@ func _die(direction: Vector3, kind: StringName) -> void:
 	var was_elite := tier == Tier.PURPLE
 	_on_death(direction, kind)
 	if Game.fx:
-		Game.fx.on_enemy_killed(pos + Vector3.UP * 0.35 * _tier_scale, direction, tier, kind == &"silent")
+		Game.fx.on_enemy_killed(pos + Vector3.UP * 0.35 * _tier_scale, direction, tier, kind == &"silent", kind)
+		if kind != &"self":
+			Game.fx.on_enemy_body(self, direction, kind)
 	if kind != &"self":
 		Game.register_kill()
 		Game.on_enemy_killed(self, pos, kind)
@@ -879,6 +918,19 @@ func play_anim_oneshot(clip: StringName, speed_scale := 1.0) -> void:
 	_anim.play(clip, 0.05)
 	_anim.speed_scale = speed_scale
 	_anim_lock = _anim.get_animation(clip).length / maxf(speed_scale, 0.01)
+
+
+func _update_flinch(delta: float) -> void:
+	if _flinch_node == null:
+		return
+	_flinch = _flinch.lerp(Vector2.ZERO, 1.0 - exp(-12.0 * delta))
+	_flinch_sq = move_toward(_flinch_sq, 0.0, delta * 3.5)
+	_flinch_node.rotation = Vector3(_flinch.x, 0.0, _flinch.y)
+	_flinch_node.scale = Vector3(1.0 + 0.16 * _flinch_sq, 1.0 - 0.2 * _flinch_sq, 1.0 + 0.16 * _flinch_sq)
+
+
+func is_staggered() -> bool:
+	return _stagger_t > 0.0
 
 
 func _set_flash(on: bool) -> void:

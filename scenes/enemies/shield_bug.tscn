@@ -60,6 +60,7 @@ motion_mode = 1
 script = ExtResource("1_shield")
 type_id = &"shield"
 display_name = "Shield Bug"
+ichor_color = Color(0.3, 0.6, 1, 1)
 base_health = 90.0
 base_speed = 3.6
 contact_damage = 13.0

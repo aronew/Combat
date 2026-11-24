@@ -63,6 +63,24 @@ var _last_status_usec := 0
 var _bolts: Array = []
 var _bolt_t: Array[float] = []
 var _bolt_i := 0
+var _merge := {}
+var _beams: Array[MeshInstance3D] = []
+var _beam_t: Array[float] = []
+var _beam_i := 0
+var _splats: Array[MeshInstance3D] = []
+var _splat_t: Array[float] = []
+var _splat_i := 0
+var _corpses: Array[Node3D] = []
+var _corpse_state: Array[Dictionary] = []
+var _corpse_i := 0
+var _beam_ray := PhysicsRayQueryParameters3D.new()
+const SPLAT_LIFE := 12.0
+const CORPSE_LIFE := 4.5
+@export_group("Gore and trails")
+@export var splats_enabled := true
+@export var corpses_enabled := true
+@export var splat_pool_size := 64
+@export var corpse_pool_size := 24
 
 
 func _ready() -> void:
@@ -90,6 +108,9 @@ func _ready() -> void:
 		_light_t.append(0.0)
 	_build_telegraphs()
 	_build_bolts()
+	_build_beams()
+	_build_splats()
+	_build_corpses()
 
 
 # --------------------------------------------------------------------------
@@ -104,8 +125,12 @@ func on_player_dash(_pos: Vector3) -> void:
 	Game.shake(shake_on_dash)
 
 
-func on_projectile_hit(pos: Vector3, direction: Vector3) -> void:
-	spark(pos, shot_spark_color, -direction)
+## Two layers: sparks in the bolt's colour back toward the shooter, and an
+## ichor spray in the bug's colour out the far side.
+func on_projectile_hit(pos: Vector3, direction: Vector3, bolt_color := Color(0, 0, 0, 0), ichor := Color(0, 0, 0, 0)) -> void:
+	spark(pos, bolt_color if bolt_color.a > 0.0 else shot_spark_color, -direction)
+	if ichor.a > 0.0:
+		spark(pos, ichor, direction + Vector3.UP * 0.4)
 	Audio.play_at(&"impact_bug", pos)
 
 
@@ -114,7 +139,7 @@ func on_wall_hit(pos: Vector3, normal: Vector3) -> void:
 	Audio.play_at(&"impact_metal", pos)
 
 
-func on_enemy_hit(pos: Vector3, damage: float, killed: bool, kind: StringName = &"bullet") -> void:
+func on_enemy_hit(pos: Vector3, damage: float, killed: bool, kind: StringName = &"bullet", src_id := 0) -> void:
 	Game.shake(shake_on_hit)
 	match kind:
 		&"slash", &"slash_crit":
@@ -123,6 +148,20 @@ func on_enemy_hit(pos: Vector3, damage: float, killed: bool, kind: StringName = 
 			Audio.play(&"counter")
 	if not damage_numbers_enabled:
 		return
+	# Plain hits on the same bug in quick succession add up in one number
+	# instead of stacking a column of them (crits, counters, kills pop their own).
+	var plain := kind == &"bullet" or kind == &"slash" or kind == &"burn"
+	if src_id != 0 and plain and not killed:
+		var now_m := Time.get_ticks_usec()
+		var rec: Dictionary = _merge.get(src_id, {})
+		if not rec.is_empty() and now_m - int(rec.t) < 350_000 and (rec.n as DamageNumber).is_showing():
+			rec.total = float(rec.total) + damage
+			rec.t = now_m
+			(rec.n as DamageNumber).bump(str(roundi(rec.total)), number_scale * minf(1.0 + float(rec.total) / 150.0, 1.6))
+			return
+		_merge[src_id] = {"n": _numbers[_number_i], "total": damage, "t": now_m}
+		if _merge.size() > 200:
+			_merge.clear()
 	var col := kill_number_color if killed else number_color
 	var s := number_scale * (1.35 if killed else 1.0)
 	var text := str(roundi(damage))
@@ -176,7 +215,7 @@ func lightning(a: Vector3, b: Vector3) -> void:
 	_bolt_t[idx] = 0.15
 
 
-func on_enemy_killed(pos: Vector3, direction: Vector3, tier := 0, silent := false) -> void:
+func on_enemy_killed(pos: Vector3, direction: Vector3, tier := 0, silent := false, kind: StringName = &"") -> void:
 	if silent:
 		Audio.play_at(&"silent_kill", pos)
 		burst(pos, direction, 0.6, Color("19f4ff"))
@@ -187,10 +226,18 @@ func on_enemy_killed(pos: Vector3, direction: Vector3, tier := 0, silent := fals
 	var ring: Color = Enemy.TIER_COLORS[tier] if tier > 0 else Color(0, 0, 0, 0)
 	burst(pos, direction, size, ring)
 	Game.shake(shake_on_kill * (1.0 + tier * 0.5))
+	# Tiered hitstop: fodder dying to gunfire never freezes the world (swarms stay
+	# smooth); tougher kills land with weight. Blade hits and counters already
+	# freeze on impact in Player._swing.
+	var stop := 0.0
+	if tier > 0:
+		stop = hitstop_on_kill * [0.0, 0.7, 1.2, 2.4][tier]
+	elif kind == &"explosion":
+		stop = hitstop_on_kill * 0.5
 	var now := Time.get_ticks_usec()
-	if now - _last_kill_stop_usec >= int(hitstop_kill_cooldown * 1_000_000.0):
+	if stop > 0.0 and now - _last_kill_stop_usec >= int(hitstop_kill_cooldown * 1_000_000.0):
 		_last_kill_stop_usec = now
-		Game.hitstop(hitstop_on_kill, hitstop_time_scale)
+		Game.hitstop(stop, hitstop_time_scale)
 
 
 func on_enemy_land(pos: Vector3, heavy: bool) -> void:
@@ -203,18 +250,22 @@ func on_enemy_land(pos: Vector3, heavy: bool) -> void:
 
 
 func on_blocked(pos: Vector3, direction: Vector3) -> void:
+	# The blue spark carries it; the word is a rare reminder, not a stream.
 	Audio.play_at(&"shield_block", pos)
 	spark(pos, Color("3aa0ff"), -direction)
+	spark(pos, Color("bfe0ff"), -direction + Vector3.UP * 0.5)
 	var now := Time.get_ticks_usec()
-	if now - _last_block_usec > 600000:
+	if now - _last_block_usec > 2_500_000:
 		_last_block_usec = now
-		text_popup(pos + Vector3.UP * 0.6, "BLOCKED", Color("6fb6ff"), 0.8)
+		text_popup(pos + Vector3.UP * 0.6, "BLOCKED", Color("6fb6ff"), 0.55)
 
 
 ## Big fiery blast with a light flash (barrels, bursters).
 func explosion(pos: Vector3, size := 2.0) -> void:
 	Audio.play_at(&"explosion", pos, clampf((size - 2.0) * 2.0, -6.0, 3.0))
 	burst(pos, Vector3.ZERO, size, Color("ff8a1e"), true)
+	burst(pos + Vector3.UP * 0.2, Vector3.ZERO, size * 0.35, Color("ffb050"), true)
+	splat(Vector3(pos.x, 0.0, pos.z), Color(0.02, 0.015, 0.01, 0.85), size * 1.3)
 	if Graphics.is_low():
 		return  # point lights are the expensive part on weak GPUs
 	var l := _lights[_light_i]
@@ -308,6 +359,7 @@ func _build_telegraphs() -> void:
 
 
 func _process(delta: float) -> void:
+	_tick_trails(delta)
 	for i in _bolts.size():
 		if _bolt_t[i] > 0.0:
 			_bolt_t[i] -= delta
@@ -379,3 +431,183 @@ func damage_number(pos: Vector3, text: String, color: Color, scale_mult := 1.0) 
 	var n := _numbers[_number_i]
 	_number_i = (_number_i + 1) % _numbers.size()
 	n.play(pos, text, color, scale_mult)
+
+
+# --------------------------------------------------------------------------
+# Rail beams, floor splats, corpses
+# --------------------------------------------------------------------------
+
+func _build_beams() -> void:
+	var shader := preload("res://scripts/shaders/neon_fade.gdshader")
+	for i in 6:
+		var m := ShaderMaterial.new()
+		m.shader = shader
+		m.set_shader_parameter("energy", 4.0)
+		m.set_shader_parameter("edge_softness", 0.4)
+		var mi := MeshInstance3D.new()
+		var bm := BoxMesh.new()
+		bm.size = Vector3(0.16, 0.16, 1.0)
+		mi.mesh = bm
+		mi.material_override = m
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		mi.top_level = true
+		mi.visible = false
+		add_child(mi)
+		_beams.append(mi)
+		_beam_t.append(0.0)
+	_beam_ray.collision_mask = 1
+
+
+## The Rail Lance's shot leaves a bright line hanging in the air for a moment,
+## from the muzzle to the first wall (it pierces bugs).
+func rail_beam(origin: Vector3, dir: Vector3, max_range: float, color: Color) -> void:
+	_beam_ray.from = origin
+	_beam_ray.to = origin + dir * max_range
+	var hit := get_world_3d().direct_space_state.intersect_ray(_beam_ray)
+	var end: Vector3 = _beam_ray.to if hit.is_empty() else hit.position
+	var mi := _beams[_beam_i]
+	_beam_t[_beam_i] = 0.28
+	_beam_i = (_beam_i + 1) % _beams.size()
+	var length := origin.distance_to(end)
+	if length < 0.5:
+		return
+	mi.global_position = (origin + end) * 0.5
+	mi.look_at(end, Vector3.UP)
+	mi.scale = Vector3(1.0, 1.0, length)
+	(mi.material_override as ShaderMaterial).set_shader_parameter("tint", color.lerp(Color.WHITE, 0.4))
+	(mi.material_override as ShaderMaterial).set_shader_parameter("fade", 1.0)
+	mi.visible = true
+
+
+func _build_splats() -> void:
+	var g := Gradient.new()
+	g.set_color(0, Color(1, 1, 1, 1))
+	g.add_point(0.55, Color(1, 1, 1, 0.85))
+	g.set_color(g.get_point_count() - 1, Color(1, 1, 1, 0))
+	var tex := GradientTexture2D.new()
+	tex.gradient = g
+	tex.fill = GradientTexture2D.FILL_RADIAL
+	tex.fill_from = Vector2(0.5, 0.5)
+	tex.fill_to = Vector2(1.0, 0.5)
+	tex.width = 64
+	tex.height = 64
+	var pm := PlaneMesh.new()
+	pm.size = Vector2(1, 1)
+	for i in splat_pool_size:
+		var m := StandardMaterial3D.new()
+		m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		m.albedo_texture = tex
+		m.roughness = 0.25
+		m.metallic_specular = 0.8
+		m.emission_enabled = true
+		var mi := MeshInstance3D.new()
+		mi.mesh = pm
+		mi.material_override = m
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		mi.top_level = true
+		mi.visible = false
+		add_child(mi)
+		_splats.append(mi)
+		_splat_t.append(0.0)
+
+
+## A blot on the floor (ichor, scorch) that fades over a few seconds.
+func splat(pos: Vector3, color: Color, size := 1.0) -> void:
+	if not splats_enabled or _splats.is_empty():
+		return
+	var mi := _splats[_splat_i]
+	_splat_t[_splat_i] = SPLAT_LIFE
+	_splat_i = (_splat_i + 1) % _splats.size()
+	mi.global_position = Vector3(pos.x, 0.02 + randf() * 0.01, pos.z)
+	mi.rotation = Vector3(0, randf() * TAU, 0)
+	var s := size * randf_range(0.8, 1.25)
+	mi.scale = Vector3(s * randf_range(0.8, 1.3), 1.0, s)
+	var m := mi.material_override as StandardMaterial3D
+	m.albedo_color = color
+	m.emission = color * 0.08
+	mi.visible = true
+
+
+func _build_corpses() -> void:
+	var scene: PackedScene = load("res://assets/models/enemies/swarmer.glb")
+	for i in corpse_pool_size:
+		var c: Node3D = scene.instantiate()
+		c.top_level = true
+		c.visible = false
+		add_child(c)
+		var ap := c.find_child("AnimationPlayer", true, false) as AnimationPlayer
+		if ap:
+			ap.stop()
+		_corpses.append(c)
+		_corpse_state.append({})
+
+
+## Gore for a dead bug: an ichor splat under it, and (swarmers) a corpse flung
+## along the killing blow that lands on its back, lies there, then sinks away.
+func on_enemy_body(e: Enemy, direction: Vector3, kind: StringName) -> void:
+	var pos := e.global_position
+	var ichor := e.ichor_color
+	splat(pos + Vector3(randf_range(-0.3, 0.3), 0, randf_range(-0.3, 0.3)), Color(ichor.r * 0.55, ichor.g * 0.55, ichor.b * 0.4, 0.8), 1.1 * e._tier_scale)
+	if not corpses_enabled or e.type_id != &"swarmer" or kind == &"silent" or _corpses.is_empty():
+		return
+	var c := _corpses[_corpse_i]
+	var st := _corpse_state[_corpse_i]
+	_corpse_i = (_corpse_i + 1) % _corpses.size()
+	var push := Vector3(direction.x, 0.0, direction.z)
+	push = push.normalized() if push.length_squared() > 0.001 else Vector3(randf() - 0.5, 0, randf() - 0.5).normalized()
+	var power := 9.0 if kind in [&"explosion", &"counter"] else 5.5
+	c.global_position = pos
+	c.rotation = Vector3(0, e.visual.rotation.y, 0)
+	c.scale = Vector3.ONE * e._tier_scale
+	c.visible = true
+	st.vel = push * power * randf_range(0.8, 1.2) + Vector3.UP * randf_range(3.5, 5.5)
+	st.spin = Vector3(randf_range(6.0, 11.0), randf_range(-4.0, 4.0), randf_range(-3.0, 3.0))
+	st.t = 0.0
+	st.landed = false
+	st.ichor = ichor
+
+
+func _tick_trails(delta: float) -> void:
+	for i in _beams.size():
+		if _beam_t[i] > 0.0:
+			_beam_t[i] -= delta
+			var mi := _beams[i]
+			var k := clampf(_beam_t[i] / 0.28, 0.0, 1.0)
+			(mi.material_override as ShaderMaterial).set_shader_parameter("fade", k)
+			mi.scale.x = lerpf(0.2, 1.4, k)
+			mi.scale.y = mi.scale.x
+			if _beam_t[i] <= 0.0:
+				mi.visible = false
+	for i in _splats.size():
+		if _splat_t[i] > 0.0:
+			_splat_t[i] -= delta
+			if _splat_t[i] < 3.0:
+				var m := _splats[i].material_override as StandardMaterial3D
+				var c := m.albedo_color
+				c.a = maxf(_splat_t[i] / 3.0, 0.0) * 0.85
+				m.albedo_color = c
+			if _splat_t[i] <= 0.0:
+				_splats[i].visible = false
+	for i in _corpses.size():
+		var c := _corpses[i]
+		if not c.visible:
+			continue
+		var st := _corpse_state[i]
+		st.t = float(st.t) + delta
+		if not st.landed:
+			var v: Vector3 = st.vel
+			v.y -= 22.0 * delta
+			st.vel = v
+			c.global_position += v * delta
+			var spin: Vector3 = st.spin
+			c.rotation += spin * delta
+			if c.global_position.y <= 0.0 and v.y < 0.0:
+				st.landed = true
+				# Settle on its back, legs up (lifted so the shell rests on the deck).
+				c.rotation = Vector3(PI, c.rotation.y, 0.0)
+				c.global_position.y = 0.46 * c.scale.y
+				splat(c.global_position, Color(st.ichor.r * 0.5, st.ichor.g * 0.5, st.ichor.b * 0.35, 0.75), 0.8)
+		elif float(st.t) > CORPSE_LIFE:
+			c.global_position.y -= delta * 0.6
+			if float(st.t) > CORPSE_LIFE + 1.2:
+				c.visible = false

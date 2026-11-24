@@ -31,6 +31,18 @@ func play(pos: Vector3, value: String, tint: Color, scale_mult := 1.0) -> void:
 	set_process(true)
 
 
+## Merge another hit into this number: new total, re-pop, keep it up a bit longer.
+func bump(value: String, scale_mult: float) -> void:
+	text = value
+	_base_scale = maxf(_base_scale, scale_mult)
+	_t = minf(_t, lifetime * 0.15)
+	_apply(_t / lifetime)
+
+
+func is_showing() -> bool:
+	return visible
+
+
 func _process(delta: float) -> void:
 	_t += delta
 	var k := _t / lifetime

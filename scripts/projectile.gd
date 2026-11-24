@@ -121,7 +121,7 @@ func _hit_enemy(enemy: Enemy) -> void:
 	if dealt <= 0.0:
 		return
 	if Game.fx:
-		Game.fx.on_projectile_hit(enemy.global_position + Vector3.UP * 0.4, dir)
+		Game.fx.on_projectile_hit(enemy.global_position + Vector3.UP * 0.4, dir, _p.get("color", Color("19f4ff")), enemy.ichor_color)
 	_apply_elements(enemy, dealt)
 	if was_alive and not enemy.is_active() and _p.get("splitter", false) and int(_p.get("generation", 0)) == 0:
 		_split(enemy.global_position + Vector3.UP * 1.0, dir)
