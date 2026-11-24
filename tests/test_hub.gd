@@ -109,7 +109,14 @@ func _test_weapon(prof, player, dummy, item: Dictionary, weapon: int, frames: in
 	player.auto_aim = dummy.global_position
 	player.auto_fire = true
 	dummy._hits.clear()
-	await _frames(frames)
+	player._fire_cd = 0.0
+	player._blade_cd = 0.0
+	await _frames(10)  # let the aim settle on the dummy
+	dummy._hits.clear()
+	if frames >= 100:
+		await create_timer(2.0).timeout  # real game time, not frame count
+	else:
+		await _frames(frames)
 	var total := 0.0
 	for h in dummy._hits:
 		total += float(h[1])
