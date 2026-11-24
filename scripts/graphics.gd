@@ -102,7 +102,12 @@ func apply() -> void:
 		(n as FogVolume).visible = quality == Quality.HIGH
 
 	for lvl in [scene.get_node_or_null("Level"), scene.get_node_or_null("HubLevel")]:
-		if lvl and lvl.has_method("floor_material"):
+		if lvl and lvl.has_method("set_low_quality"):
+			lvl.set_low_quality(quality == Quality.LOW)
+		if lvl and lvl.has_method("floor_materials"):
+			for m in lvl.floor_materials():
+				m.shader = _floor_low if quality == Quality.LOW else _floor_high
+		elif lvl and lvl.has_method("floor_material"):
 			var m: ShaderMaterial = lvl.floor_material()
 			if m:
 				m.shader = _floor_low if quality == Quality.LOW else _floor_high

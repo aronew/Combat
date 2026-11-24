@@ -228,7 +228,9 @@ func _drive(delta: float) -> void:
 	var nav := lvl.get_nav_target(pos, goal)
 	var to := nav - pos
 	to.y = 0.0
-	var move := to.normalized() if to.length() > 0.6 else Vector3.ZERO
+	# Stop only near the real goal; doorway waypoints must be reached exactly.
+	var stop_at := 0.6 if nav.is_equal_approx(goal) else 0.08
+	var move := to.normalized() if to.length() > stop_at else Vector3.ZERO
 	if m.phase == Mission.Phase.LIFT and pos.distance_to(lvl.lift_position) < 1.5:
 		move = Vector3.ZERO
 

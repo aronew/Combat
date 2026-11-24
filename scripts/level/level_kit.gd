@@ -291,6 +291,32 @@ func deck(r: Rect2, floor_mat: Material = null, pillars := true) -> void:
 				truss(p, 1.6, -deck_thickness - 0.2, 30.0)
 
 
+## Floor material with a different base tint (cached), for room purposes.
+func floor_variant(tint: Color) -> ShaderMaterial:
+	var key := "floor_%s" % tint.to_html()
+	if not mats.has(key):
+		var m: ShaderMaterial = mats.floor.duplicate()
+		m.set_shader_parameter("base_color", tint)
+		mats[key] = m
+	return mats[key]
+
+
+## Painted floor guide line loop around a rect with cut corners (mockups).
+func guide_loop(r: Rect2, chamfer: float, width := 0.16, mat: Material = null) -> void:
+	var m: Material = mat if mat else mats.guide_white
+	var x0 := r.position.x
+	var x1 := r.end.x
+	var z0 := r.position.y
+	var z1 := r.end.y
+	var pts := [Vector3(x0 + chamfer, 0, z0), Vector3(x1 - chamfer, 0, z0), Vector3(x1, 0, z0 + chamfer), Vector3(x1, 0, z1 - chamfer),
+		Vector3(x1 - chamfer, 0, z1), Vector3(x0 + chamfer, 0, z1), Vector3(x0, 0, z1 - chamfer), Vector3(x0, 0, z0 + chamfer)]
+	for i in pts.size():
+		var a: Vector3 = pts[i]
+		var b: Vector3 = pts[(i + 1) % pts.size()]
+		var d := b - a
+		batch_box(Vector3(d.length() + width * 0.5, 0.02, width), (a + b) * 0.5 + Vector3(0, 0.012, 0), m, Basis(Vector3.UP, atan2(-d.z, d.x)), false)
+
+
 ## Steel lattice column dropping into the void: four posts with X bracing.
 func truss(top: Vector3, width: float, y_top: float, depth: float) -> void:
 	var h := width * 0.5

@@ -75,6 +75,12 @@ func _check_floor(lvl, where: String) -> void:
 	for r in lvl.regions.size():
 		if r != start and lvl._next[start][r] < 0:
 			_fail(where, "region %d (%s) unreachable" % [r, lvl.regions[r].name])
+	# Catwalk doorways are full width (not split by walkway-strip seams).
+	for pt in lvl.portals:
+		var a: int = pt.a
+		var b: int = pt.b
+		if (lvl.regions[a].room == &"bridge") != (lvl.regions[b].room == &"bridge") and pt.half * 2.0 < 2.2:
+			_fail(where, "narrow catwalk doorway (%.1f m) at %s" % [pt.half * 2.0, pt.center])
 	# Every bridge links two rooms.
 	for i in lvl.regions.size():
 		if lvl.regions[i].room == &"bridge" and lvl.region_neighbors(i).size() < 2:

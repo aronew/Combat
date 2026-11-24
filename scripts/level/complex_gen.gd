@@ -31,6 +31,53 @@ const THEMES := [
 const FINAL_THEME := {"name": "Reactor Core", "lamp": Color("ffb35c"), "alt": Color("e8eef5"), "red_rails": true,
 	"kinds": {"plain": 3, "block": 3, "split": 2, "hole": 2}}
 
+## What a room is for: decides its name, props, walls and floor tint.
+const PURPOSES := {
+	"plain": ["loading", "hydroponics", "crew", "control", "crossroads"],
+	"block": ["switchgear", "servers", "containers"],
+	"hole": ["pump", "well"],
+	"split": ["lock"],
+	"start": ["landing"],
+	"cargo": ["cargo_lift"],
+	"reactor": ["reactor"],
+}
+const PURPOSE_NAMES := {
+	"loading": ["Loading Bay", "Freight Yard", "Staging Deck", "Crane Deck"],
+	"hydroponics": ["Hydroponics", "Grow Deck", "Overgrown Garden"],
+	"crew": ["Crew Quarters", "Locker Room", "Mess Deck"],
+	"control": ["Control Room", "Ops Deck", "Monitoring Station"],
+	"crossroads": ["Junction", "Crossroads", "Gantry"],
+	"switchgear": ["Switchgear Hall", "Transformer Bay", "Relay Room"],
+	"servers": ["Server Gallery", "Data Vault"],
+	"containers": ["Container Yard", "Cargo Hold"],
+	"pump": ["Pump Shaft", "Coolant Well"],
+	"well": ["Vent Ring", "Cable Well", "Drill Shaft"],
+	"lock": ["Pressure Lock", "Decon Lock", "Bulkhead Section"],
+	"landing": ["Lift Landing"],
+	"cargo_lift": ["Cargo Lift"],
+	"reactor": ["Reactor Ring"],
+}
+## Chance each far side (north, west: the top of the screen) gets a solid wall.
+const WALL_CHANCE := {"loading": 0.4, "hydroponics": 0.7, "crew": 0.85, "control": 0.85,
+	"switchgear": 0.7, "servers": 0.85, "containers": 0.35, "pump": 0.4, "lock": 0.6}
+## Floor tint per purpose (else the default worn concrete).
+const FLOOR_TINTS := {
+	"control": Color(0.27, 0.3, 0.34), "servers": Color(0.24, 0.27, 0.31), "crew": Color(0.33, 0.31, 0.28),
+	"hydroponics": Color(0.25, 0.28, 0.22), "containers": Color(0.31, 0.28, 0.25), "switchgear": Color(0.3, 0.31, 0.32),
+}
+## Props lined up against walls, by purpose.
+const WALL_PROPS := {
+	"loading": ["electrical_box", "cable_spool", "hard_case"],
+	"hydroponics": ["planter", "planter", "electrical_box"],
+	"crew": ["locker_row", "locker_row", "electrical_box"],
+	"control": ["console", "console", "server_rack"],
+	"switchgear": ["electrical_box", "cable_spool", "switchgear"],
+	"servers": ["server_rack", "server_rack", "console"],
+	"containers": ["electrical_box", "hard_case"],
+	"pump": ["electrical_box", "tank"],
+	"lock": ["console", "electrical_box"],
+}
+
 const NAMES := {
 	"plain": ["Catwalk Deck", "Loading Bay", "Gantry", "Cargo Hold", "Staging Deck", "Crane Deck", "Freight Yard"],
 	"block": ["Switchgear Hall", "Transformer Bay", "Server Gallery", "Relay Room", "Capacitor Hall"],
@@ -91,6 +138,7 @@ func generate(seed_: int, floor_idx: int, floors: int, depth: int) -> Dictionary
 		"red_rails": theme.get("red_rails", false),
 		"barrels": [], "nests": [], "turrets": [], "breakers": [], "lasers": [], "doors": [],
 		"crates": [], "panels": [], "guides": [], "placements": [], "shaft_glows": [], "carcasses": [],
+		"props": [], "wall_lights": [], "guide_loops": [], "shaft_pipes": [],
 		"uplink": Vector3.INF, "cargo": Vector3.INF,
 	}
 	var used_names := {}
@@ -124,8 +172,9 @@ func generate(seed_: int, floor_idx: int, floors: int, depth: int) -> Dictionary
 	_out.hive_center = hive
 	var rooms_out: Array = []
 	for r in _rooms:
-		var d := {"id": r.id, "name": r.name, "rect": r.rect, "kind": r.kind, "lamp": r.lamp, "role": r.role}
-		for k in ["block", "hole", "split_x", "door"]:
+		var d := {"id": r.id, "name": r.name, "rect": r.rect, "kind": r.kind, "lamp": r.lamp, "role": r.role,
+			"purpose": r.purpose, "walls": r.walls, "floor_tint": r.floor_tint}
+		for k in ["block", "hole", "split_x", "door", "block_props"]:
 			if r.has(k):
 				d[k] = r[k]
 		rooms_out.append(d)
@@ -295,7 +344,9 @@ func _make_room(i: int, kind: String, role: String, theme: Dictionary, used_name
 	var c := Vector2(snappedf(cc.x + rng.randf_range(-jx, jx), 0.5), snappedf(cc.y + rng.randf_range(-jz, jz), 0.5))
 	var rect := Rect2(c.x - w * 0.5, c.y - h * 0.5, w, h)
 
-	var name_list: Array = NAMES[kind]
+	var purposes: Array = PURPOSES[kind]
+	var purpose: String = purposes[rng.randi_range(0, purposes.size() - 1)]
+	var name_list: Array = PURPOSE_NAMES[purpose]
 	var base: String = name_list[rng.randi_range(0, name_list.size() - 1)]
 	var nm := base
 	var k := 2
@@ -308,6 +359,7 @@ func _make_room(i: int, kind: String, role: String, theme: Dictionary, used_name
 		"id": StringName("r%d" % i), "name": nm, "rect": rect, "role": role, "center3": Vector3(c.x, 0, c.y),
 		"lamp": theme.alt if rng.randf() < 0.3 else theme.lamp, "nests": 0, "side": {},
 		"kind": {"start": "plain", "cargo": "plain", "reactor": "hole"}.get(kind, kind), "tag": kind,
+		"purpose": purpose, "walls": [], "floor_tint": FLOOR_TINTS.get(purpose, Color(0, 0, 0, 0)),
 	}
 	match kind:
 		"block":
@@ -363,9 +415,16 @@ func _make_bridge(i: int, j: int, main: bool) -> void:
 		var east := b if ca.x < cb.x else a
 		var rw: Rect2 = west.rect
 		var re: Rect2 = east.rect
-		var lo := maxf(rw.position.y, re.position.y) + bw * 0.5 + 1.5
-		var hi := minf(rw.end.y, re.end.y) - bw * 0.5 - 1.5
-		var z := snappedf(rng.randf_range(lo, hi) if hi > lo else (lo + hi) * 0.5, 0.5)
+		# Pick z inside one walkway strip of each room (never across the seam
+		# between a hole/block room's strips: that would split the doorway
+		# into two narrow halves big bugs can't path through).
+		var z := _pick_lateral(_edge_spans(west), _edge_spans(east), bw)
+		if is_nan(z) and bw > 3.0:
+			bw = 3.0
+			z = _pick_lateral(_edge_spans(west), _edge_spans(east), bw)
+		if is_nan(z):
+			z = (maxf(rw.position.y, re.position.y) + minf(rw.end.y, re.end.y)) * 0.5
+		z = snappedf(z, 0.25)
 		bridge.rect = Rect2(rw.end.x, z - bw * 0.5, re.position.x - rw.end.x, bw)
 		bridge.along_x = true
 		bridge.ends = [Vector2(rw.end.x, z), Vector2(re.position.x, z)]
@@ -412,6 +471,39 @@ func _make_bridge(i: int, j: int, main: bool) -> void:
 # ==========================================================================
 # Objects and dressing
 # ==========================================================================
+
+## Z ranges of a room's east/west edge that lie within one walkway strip.
+func _edge_spans(r: Dictionary) -> Array[Vector2]:
+	var rect: Rect2 = r.rect
+	if r.has("hole") or r.has("block"):
+		var inner: Rect2 = r.hole if r.has("hole") else r.block
+		return [Vector2(rect.position.y, inner.position.y), Vector2(inner.position.y, inner.end.y), Vector2(inner.end.y, rect.end.y)]
+	return [Vector2(rect.position.y, rect.end.y)]
+
+
+## A random lateral position for a catwalk of width `bw` that sits inside one
+## span of each side (with margins), or NAN if there's none.
+func _pick_lateral(a: Array[Vector2], b: Array[Vector2], bw: float) -> float:
+	var ok: Array[Vector2] = []
+	var m := bw * 0.5 + 0.6
+	for sa in a:
+		for sb in b:
+			var lo := maxf(sa.x, sb.x) + m
+			var hi := minf(sa.y, sb.y) - m
+			if hi >= lo:
+				ok.append(Vector2(lo, hi))
+	if ok.is_empty():
+		return NAN
+	var total := 0.0
+	for o in ok:
+		total += o.y - o.x + 0.01
+	var pick := rng.randf() * total
+	for o in ok:
+		pick -= o.y - o.x + 0.01
+		if pick <= 0.0:
+			return rng.randf_range(o.x, o.y)
+	return ok[0].x
+
 
 ## Random free floor point in a room, `margin` from its edges and clear of
 ## everything placed so far. Returns [point, piece] or [] if none fits.
@@ -511,31 +603,22 @@ func _dress_room(i: int, floor_idx: int, final: bool) -> void:
 		var sx: float = r.split_x
 		var door: Vector2 = r.door
 		var west_side := (r.center3 as Vector3).x > 0.0
-		var sw := Vector3(sx + (-1.2 if west_side else 1.2), 0, door.y + 1.6 if door.y + 2.5 < rect.end.y else door.x - 1.6)
+		var sw := Vector3(sx + (-0.62 if west_side else 0.62), 0, door.y + 1.6 if door.y + 2.5 < rect.end.y else door.x - 1.6)
 		_out.doors.append({"pos": Vector3(sx, 0, (door.x + door.y) * 0.5), "width": door.y - door.x,
 			"switch": sw, "switch_rot": PI if west_side else 0.0})
 		_occupy(Vector2(sx, (door.x + door.y) * 0.5), 3.0)
 		_occupy(Vector2(sw.x, sw.z), 1.5)
+		var zz := rect.position.y
+		while zz <= rect.end.y:
+			if zz < door.x - 0.5 or zz > door.y + 0.5:
+				_occupy(Vector2(sx, zz), 0.8)
+			zz += 1.2
 	if tag == "start" or tag == "cargo":
 		_out.panels.append({"size": Vector2(6.0, 5.0), "pos": r.center3})
 		var c: Vector3 = r.center3
 		_out.guides.append([c + Vector3(-3.5, 0, -4.0), c + Vector3(-3.5, 0, 4.0)])
 		_out.guides.append([c + Vector3(3.5, 0, -4.0), c + Vector3(3.5, 0, 4.0)])
-	# Crates in clusters (cover), a few hazard panels and a guide line.
-	var clusters := rng.randi_range(1, 3) if tag != "reactor" else 1
-	for k in clusters:
-		var spot := _free_spot(r, 2.0, 2.2)
-		if spot.is_empty():
-			continue
-		var p: Vector2 = spot[0]
-		var rot := 0.0 if rng.randf() < 0.5 else 90.0
-		_out.crates.append(Vector4(p.x, p.y, rot, rng.randi_range(1, 2)))
-		_occupy(p, 1.6)
-		if rng.randf() < 0.6:
-			var q := p + Vector2(1.7 if rot == 0.0 else 0.0, 0.0 if rot == 0.0 else 1.7)
-			if _is_clear(q, 1.0) and (rect.grow(-1.5)).has_point(q) and _in_pieces(r, q):
-				_out.crates.append(Vector4(q.x, q.y, rot, 1))
-				_occupy(q, 1.6)
+	_dress_purpose(r)
 	for k in rng.randi_range(0, 2):
 		var spot := _free_spot(r, 2.5, 0.0)
 		if not spot.is_empty():
@@ -567,6 +650,10 @@ func _dress_room(i: int, floor_idx: int, final: bool) -> void:
 			_out.nests.append(Vector3(spot[0].x, 0, spot[0].y))
 			_occupy(spot[0], 2.0)
 			r.nests += 1
+			var egg := _free_spot(r, 1.4, 0.6)
+			if not egg.is_empty() and (egg[0] as Vector2).distance_to(spot[0]) < 6.0:
+				_prop("egg_cluster", egg[0], rng.randf() * TAU)
+				_occupy(egg[0], 1.2)
 			# A couple of bugs tending the nest, crawling round it.
 			var nest_pos: Vector2 = spot[0]
 			for k in rng.randi_range(1, 3):
@@ -589,6 +676,211 @@ func _dress_room(i: int, floor_idx: int, final: bool) -> void:
 				_out.turrets.append({"pos": Vector3(cpos.x, 0, cpos.y), "yaw": atan2(-to.x, -to.y)})
 				_occupy(cpos, 2.0)
 				break
+
+
+# --------------------------------------------------------------------------
+# Room purposes: walls, props, centrepieces
+# --------------------------------------------------------------------------
+
+func _prop(name: String, p: Vector2, yaw: float, scale := Vector3.ONE, tint := Color(0, 0, 0, 0)) -> void:
+	_out.props.append({"name": name, "pos": Vector3(p.x, 0, p.y), "yaw": yaw, "scale": scale, "tint": tint})
+
+
+## Yaw that turns a prop's front (-Z) to face `dir` (XZ).
+func _face(dir: Vector2) -> float:
+	return atan2(-dir.x, -dir.y)
+
+
+func _dress_purpose(r: Dictionary) -> void:
+	var purpose: String = r.purpose
+	var rect: Rect2 = r.rect
+	var c := rect.get_center()
+	# Solid walls on the far sides (top of the screen), with props against them.
+	if WALL_CHANCE.has(purpose):
+		for side in ["n", "w"]:
+			if r.side.has(side) or rng.randf() > WALL_CHANCE[purpose]:
+				continue
+			_build_wall(r, side)
+	# Props along the open railing edges (AC units, cabinets, cases).
+	var edge_props: Array = ["ac_unit", "electrical_box", "hard_case"]
+	if purpose == "hydroponics":
+		edge_props = ["planter"]
+	elif purpose == "reactor" or purpose == "landing" or purpose == "cargo_lift":
+		edge_props = ["ac_unit", "ac_unit", "electrical_box"]
+	for side in ["n", "s", "w", "e"]:
+		if r.walls.has(side):
+			continue
+		_line_props(r, side, edge_props, 0.6 if purpose != "crossroads" else 0.25, 0.75)
+	match purpose:
+		"switchgear", "servers", "containers":
+			_fill_block(r, purpose)
+		"loading":
+			for k in rng.randi_range(2, 3):
+				_case_cluster(r)
+			for k in rng.randi_range(0, 1):
+				var sp := _free_spot(r, 3.4, 1.8)
+				if not sp.is_empty():
+					_prop("cable_spool", sp[0], rng.randf() * TAU)
+					_occupy(sp[0], 1.3)
+		"crossroads":
+			var loop := Rect2(c - Vector2(4.0, 4.0), Vector2(8.0, 8.0))
+			if rect.grow(-2.0).encloses(loop):
+				_out.guide_loops.append({"rect": loop, "chamfer": 1.2})
+		"control":
+			if rect.size.x >= 16.0 and rect.size.y >= 13.0 and _is_clear(c, 2.0):
+				_prop("console", c + Vector2(0, -0.45), PI)
+				_prop("console", c + Vector2(0, 0.45), 0.0)
+				_occupy(c, 1.8)
+			_case_cluster(r)
+		"pump":
+			var hole: Rect2 = r.hole
+			for corner in [rect.position + Vector2(1.9, 1.9), Vector2(rect.end.x - 1.9, rect.position.y + 1.9),
+					Vector2(rect.position.x + 1.9, rect.end.y - 1.9), rect.end - Vector2(1.9, 1.9)]:
+				var cp: Vector2 = corner
+				if rng.randf() < 0.6 and _is_clear(cp, 1.6) and not hole.grow(1.5).has_point(cp):
+					_prop("tank", cp, rng.randf() * TAU)
+					_occupy(cp, 1.8)
+			_out.shaft_pipes.append({"rect": hole, "count": 2})
+		"well", "reactor":
+			_out.shaft_pipes.append({"rect": r.hole, "count": 1 if purpose == "reactor" else 2})
+			if purpose == "reactor":
+				_case_cluster(r)
+		"crew", "hydroponics", "lock", "landing", "cargo_lift":
+			_case_cluster(r)
+	# A floor vent or two (walkable).
+	for k in rng.randi_range(0, 2):
+		var sp := _free_spot(r, 2.0, 1.4)
+		if not sp.is_empty():
+			_prop("floor_vent", sp[0], 0.0 if rng.randf() < 0.5 else PI * 0.5)
+			_occupy(sp[0], 1.0)
+
+
+func _build_wall(r: Dictionary, side: String) -> void:
+	var rect: Rect2 = r.rect
+	var a := rect.position
+	var b := Vector2(rect.end.x, rect.position.y) if side == "n" else Vector2(rect.position.x, rect.end.y)
+	var inward := Vector2(0, 1) if side == "n" else Vector2(1, 0)
+	var length := a.distance_to(b)
+	var dir := (b - a) / length
+	r.walls.append(side)
+	var n := maxi(1, roundi(length / 3.0))
+	var seg := length / n
+	var door_k := rng.randi_range(0, n - 1) if rng.randf() < 0.45 and n >= 3 else -1
+	for k in n:
+		var mid := a + dir * (k + 0.5) * seg + inward * 0.25
+		if k == door_k:
+			_prop("door", mid + inward * 0.12, _face(inward), Vector3(seg / 3.4, 1, 1))
+		else:
+			_prop("wall_panel", mid, _face(inward), Vector3(seg / 3.0, 1, 1))
+	# Keep spawns and other props off the wall strip.
+	var t := 0.0
+	while t <= length:
+		_occupy(a + dir * t + inward * 0.4, 0.9)
+		t += 1.5
+	# Wall lights.
+	var lights := maxi(1, roundi(length / 9.0))
+	for k in lights:
+		var lp := a + dir * (k + 0.5) * (length / lights) + inward * 0.9
+		_out.wall_lights.append({"pos": Vector3(lp.x, 2.7, lp.y), "color": r.lamp})
+	# Props against the wall.
+	var list: Array = WALL_PROPS.get(r.purpose, ["electrical_box"])
+	_line_props(r, side, list, 0.7, 0.55, true)
+
+
+## Props in a row along one side of the room, facing inward.
+func _line_props(r: Dictionary, side: String, names: Array, density: float, inset: float, wall := false) -> void:
+	var rect: Rect2 = r.rect
+	var a: Vector2
+	var b: Vector2
+	var inward: Vector2
+	match side:
+		"n":
+			a = rect.position
+			b = Vector2(rect.end.x, rect.position.y)
+			inward = Vector2(0, 1)
+		"s":
+			a = Vector2(rect.position.x, rect.end.y)
+			b = rect.end
+			inward = Vector2(0, -1)
+		"w":
+			a = rect.position
+			b = Vector2(rect.position.x, rect.end.y)
+			inward = Vector2(1, 0)
+		_:
+			a = Vector2(rect.end.x, rect.position.y)
+			b = rect.end
+			inward = Vector2(-1, 0)
+	var length := a.distance_to(b)
+	var dir := (b - a) / length
+	var t := 2.2
+	while t < length - 2.2:
+		var pick: String = names[rng.randi_range(0, names.size() - 1)]
+		var size: Vector2 = Props.DEFS[pick].size
+		var depth := size.y
+		# Flush against the wall or railing: no gap for bugs to get wedged in.
+		var p := a + dir * (t + size.x * 0.5) + inward * ((0.55 if wall else 0.28) + depth * 0.5)
+		if rng.randf() < density and _is_clear(p, maxf(size.x, size.y) * 0.5 + 0.4) and _in_pieces(r, p):
+			_prop(pick, p, _face(inward))
+			_occupy(p, maxf(size.x, size.y) * 0.5 + 0.3)
+			t += size.x + rng.randf_range(0.8, 2.5)
+		else:
+			t += 1.5
+
+
+## A few hard cases stacked as cover.
+func _case_cluster(r: Dictionary) -> void:
+	# Keep the whole cluster well clear of edges, so bugs can walk round it.
+	var sp := _free_spot(r, 3.6, 2.0)
+	if sp.is_empty():
+		return
+	var p: Vector2 = sp[0]
+	var yaw := rng.randf_range(-0.3, 0.3) + (0.0 if rng.randf() < 0.5 else PI * 0.5)
+	_prop("hard_case", p, yaw)
+	var off := Vector2(cos(-yaw), sin(-yaw)) * 1.25
+	for q in [p + off, p - off * 0.95 + Vector2(0.1, 0.8).rotated(-yaw)]:
+		var qq: Vector2 = q
+		if rng.randf() < 0.65 and _in_pieces_margin(r, qq, 2.4) and _is_clear(qq, 0.9):
+			_prop("hard_case", qq, yaw + rng.randf_range(-0.2, 0.2))
+	_occupy(p, 2.4)
+
+
+func _in_pieces_margin(r: Dictionary, p: Vector2, margin: float) -> bool:
+	for pc in _pieces(r):
+		if pc.grow(-margin).has_point(p):
+			return true
+	return false
+
+
+## Fill a block room's central block with a row of cabinets, racks or containers.
+func _fill_block(r: Dictionary, purpose: String) -> void:
+	var blk: Rect2 = r.block
+	r.block_props = true
+	match purpose:
+		"switchgear", "servers":
+			var name := "switchgear" if purpose == "switchgear" else "server_rack"
+			var w: float = Props.DEFS[name].size.x
+			var n := maxi(1, int(blk.size.x / w))
+			var sx := blk.size.x / (n * w)
+			var rows := [[blk.position.y + 0.5, 0.0]]  # north row, facing north
+			if blk.size.y >= 1.9:
+				rows.append([blk.end.y - 0.5, PI])  # south row, facing south
+			for row in rows:
+				for k in n:
+					var x := blk.position.x + (k + 0.5) * w * sx
+					_prop(name, Vector2(x, row[0]), row[1], Vector3(sx, 1, 1))
+		"containers":
+			var n := maxi(1, roundi(blk.size.x / 6.2))
+			var sx := clampf(blk.size.x / (n * 6.0), 0.6, 1.25)
+			var m := maxi(1, int(blk.size.y / 2.45))
+			var sz := blk.size.y / (m * 2.4)
+			var tints := [Color(0.45, 0.16, 0.1), Color(0.14, 0.24, 0.38), Color(0.46, 0.34, 0.1), Color(0.2, 0.3, 0.2), Color(0.38, 0.38, 0.38)]
+			for i in n:
+				for j in m:
+					var p := Vector2(blk.position.x + (i + 0.5) * blk.size.x / n, blk.position.y + (j + 0.5) * blk.size.y / m)
+					_prop("container", p, 0.0 if rng.randf() < 0.5 else PI, Vector3(sx, 1, sz), tints[rng.randi_range(0, tints.size() - 1)])
+					if rng.randf() < 0.4:
+						_out.props.append({"name": "container", "pos": Vector3(p.x, 2.6, p.y), "yaw": 0.0, "scale": Vector3(sx, 1, sz),
+							"tint": tints[rng.randi_range(0, tints.size() - 1)]})
 
 
 func _in_pieces(r: Dictionary, p: Vector2) -> bool:
@@ -631,8 +923,10 @@ func _populate(i: int, floor_idx: int, depth: int, final: bool) -> void:
 	var tag: String = r.tag
 	var area := (r.rect as Rect2).get_area()
 	var budget := area / 75.0 * (1.0 + 0.15 * floor_idx) * rng.randf_range(0.7, 1.25)
-	if tag == "cargo" or tag == "reactor":
-		budget *= 1.3
+	if tag == "cargo":
+		budget *= 1.2
+	elif tag == "reactor":
+		budget *= 0.8  # the uplink alarm brings plenty more
 	var blue_p := 0.05 + 0.05 * floor_idx + 0.03 * (depth - 1)
 	while budget > 0.0:
 		var roll := rng.randf()

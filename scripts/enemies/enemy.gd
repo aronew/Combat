@@ -590,7 +590,7 @@ func _tick_chase(delta: float) -> void:
 func _steer(goal: Vector3, move_speed: float, delta: float, use_nav: bool) -> void:
 	var g := goal
 	if use_nav and Game.level:
-		g = Game.level.get_nav_target(global_position, goal)
+		g = Game.level.get_nav_target(global_position, goal, get_hit_radius())
 	var to := g - global_position
 	to.y = 0.0
 	var dir := to.normalized() if to.length_squared() > 0.01 else Vector3.ZERO
