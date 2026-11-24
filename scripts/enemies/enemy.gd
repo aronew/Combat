@@ -94,6 +94,12 @@ var _los_t := 0.0
 var _los_query := PhysicsRayQueryParameters3D.new()
 var _aura: MeshInstance3D
 var _nameplate: Label3D
+var _burn_t := 0.0
+var _burn_dps := 0.0
+var _burn_tick := 0.0
+var _cryo_t := 0.0
+var _corrode_t := 0.0
+var _status_fx_t := 0.0
 
 static var _aura_mats := {}
 
@@ -128,6 +134,7 @@ func _ready() -> void:
 func spawn_at(pos: Vector3, mode: StringName, opts := {}) -> void:
 	tier = opts.get("tier", Tier.NORMAL)
 	_activate(opts.get("health_mult", 1.0), opts.get("speed_mult", 1.0))
+	damage_mult *= float(opts.get("damage_mult", 1.0))
 	var p := Vector3(pos.x, 0.0, pos.z)
 	_home = p
 	_entrance_alerted = opts.get("alerted", mode != &"dormant" and mode != &"patrol")
@@ -179,6 +186,9 @@ func _activate(health_mult: float, speed_mult: float) -> void:
 	_wait = 0.0
 	_sense_t = randf() * 0.2
 	_detour_sign = 1.0 if randf() < 0.5 else -1.0
+	_burn_t = 0.0
+	_cryo_t = 0.0
+	_corrode_t = 0.0
 	_set_flash(false)
 	visual.scale = Vector3.ONE * _tier_scale
 	visual.position = Vector3.ZERO
@@ -315,11 +325,12 @@ func _can_see_player() -> bool:
 	var to := p.global_position - global_position
 	to.y = 0.0
 	var dist := to.length()
+	var sight_mult := 1.0 - p.stealth
 	if state == State.DORMANT:
-		if dist > sleep_sight_range:
+		if dist > sleep_sight_range * sight_mult:
 			return false
 	else:
-		if dist > sight_range:
+		if dist > sight_range * sight_mult:
 			return false
 		if dist > 1.8 and get_facing().dot(to / dist) < cos(deg_to_rad(sight_cone_degrees * 0.5)):
 			return false
@@ -346,6 +357,10 @@ func _physics_process(delta: float) -> void:
 		_flash_t -= delta
 		if _flash_t <= 0.0:
 			_set_flash(false)
+	if _burn_t > 0.0 or _cryo_t > 0.0 or _corrode_t > 0.0:
+		_tick_status(delta)
+		if not is_active():
+			return
 	if _custom_tick(delta):
 		return
 	match state:
@@ -460,7 +475,7 @@ func _steer(goal: Vector3, move_speed: float, delta: float, use_nav: bool) -> vo
 				_detour_t = 0.0
 		if _detour_t > 0.0:
 			dir = (dir * 0.25 + _detour).normalized()
-	var desired := dir * move_speed * _speed_factor(dir)
+	var desired := dir * move_speed * _speed_factor(dir) * (0.5 if _cryo_t > 0.0 else 1.0)
 	if state == State.CHASE:
 		desired += _sep
 	_move_vel = _move_vel.move_toward(desired, acceleration * delta)
@@ -530,16 +545,21 @@ func take_hit(damage: float, direction: Vector3, knockback: float, _source_team:
 		if is_unaware():
 			alert(true)
 		return 0.0
+	if _corrode_t > 0.0:
+		dealt *= 1.25
+	if is_unaware() and kind != &"silent" and Profile.has_legendary("hunters_eye"):
+		dealt *= 2.0
 	health -= dealt
-	_flash_t = flash_duration
-	_set_flash(true)
+	if kind != &"burn":
+		_flash_t = flash_duration
+		_set_flash(true)
 	var push := Vector3(direction.x, 0.0, direction.z)
 	push = push.normalized() if push.length_squared() > 0.0001 else Vector3.ZERO
 	_knock += push * knockback * (1.0 - knockback_resistance)
 	_move_vel *= hit_stagger
 	var killed := health <= 0.0
 	if Game.fx and kind != &"silent":
-		Game.fx.on_enemy_hit(global_position, dealt, killed)
+		Game.fx.on_enemy_hit(global_position, dealt, killed, kind)
 	if killed:
 		_die(push, kind)
 	elif is_unaware() and kind != &"silent":
@@ -555,6 +575,7 @@ func _die(direction: Vector3, kind: StringName) -> void:
 		Game.fx.on_enemy_killed(pos + Vector3.UP * 0.35 * _tier_scale, direction, tier, kind == &"silent")
 	if kind != &"self":
 		Game.register_kill()
+		Game.on_enemy_killed(self, pos, kind)
 		if Game.pickups:
 			var mult: float = Game.director.loot_multiplier() if Game.director else 1.0
 			Game.pickups.drop_salvage(pos, roundi(salvage * TIER_SALVAGE[tier] * mult))
@@ -569,6 +590,42 @@ func _die(direction: Vector3, kind: StringName) -> void:
 func _set_flash(on: bool) -> void:
 	for g in _flash_targets:
 		g.material_override = flash_material if on else null
+
+
+# ==========================================================================
+# Status effects (from gear elements)
+# ==========================================================================
+
+## burn: `power` = total damage over 3 s. cryo: 50% slow for 2 s. corrode: +25% damage taken for 4 s.
+func apply_status(kind: StringName, power: float) -> void:
+	if not is_active():
+		return
+	match kind:
+		&"burn":
+			_burn_dps = maxf(_burn_dps if _burn_t > 0.0 else 0.0, power / 3.0)
+			_burn_t = 3.0
+		&"cryo":
+			_cryo_t = maxf(_cryo_t, 2.0 * power)
+		&"corrode":
+			_corrode_t = maxf(_corrode_t, 4.0 * power)
+	if Game.fx:
+		Game.fx.status_pop(global_position + Vector3.UP * 1.0, kind)
+
+
+func _tick_status(delta: float) -> void:
+	_cryo_t = maxf(_cryo_t - delta, 0.0)
+	_corrode_t = maxf(_corrode_t - delta, 0.0)
+	_status_fx_t -= delta
+	if _status_fx_t <= 0.0 and Game.fx:
+		_status_fx_t = 0.35
+		var c := Color("ff7a1a") if _burn_t > 0.0 else (Color("9fe8ff") if _cryo_t > 0.0 else Color("b6ff3d"))
+		Game.fx.spark(global_position + Vector3.UP * 0.6, c, Vector3.UP)
+	if _burn_t > 0.0:
+		_burn_t -= delta
+		_burn_tick -= delta
+		if _burn_tick <= 0.0:
+			_burn_tick = 0.5
+			take_hit(_burn_dps * 0.5, Vector3.ZERO, 0.0, Game.TEAM_PLAYER, &"burn")
 
 
 # ==========================================================================

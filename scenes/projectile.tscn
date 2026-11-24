@@ -1,23 +1,21 @@
 [gd_scene format=3]
 
 [ext_resource type="Script" path="res://scripts/projectile.gd" id="1_proj"]
-[ext_resource type="Shader" path="res://scripts/shaders/neon_fade.gdshader" id="2_fade"]
+[ext_resource type="Shader" path="res://scripts/shaders/bolt.gdshader" id="2_bolt"]
 
 [sub_resource type="ShaderMaterial" id="Mat_glow"]
 render_priority = 1
-shader = ExtResource("2_fade")
-shader_parameter/tint = Color(0.098, 0.957, 1, 1)
+shader = ExtResource("2_bolt")
 shader_parameter/energy = 3.0
-shader_parameter/fade = 1.0
 shader_parameter/edge_softness = 0.5
+shader_parameter/core_whiteness = 0.0
 
 [sub_resource type="ShaderMaterial" id="Mat_core"]
 render_priority = 2
-shader = ExtResource("2_fade")
-shader_parameter/tint = Color(0.85, 1, 1, 1)
+shader = ExtResource("2_bolt")
 shader_parameter/energy = 4.0
-shader_parameter/fade = 1.0
 shader_parameter/edge_softness = 0.0
+shader_parameter/core_whiteness = 0.8
 
 [sub_resource type="CapsuleMesh" id="Mesh_glow"]
 radius = 0.11

@@ -59,6 +59,10 @@ var _light_t: Array[float] = []
 var _light_i := 0
 var _tele: Array[Dictionary] = []
 var _tele_i := 0
+var _last_status_usec := 0
+var _bolts: Array = []
+var _bolt_t: Array[float] = []
+var _bolt_i := 0
 
 
 func _ready() -> void:
@@ -85,14 +89,15 @@ func _ready() -> void:
 		_lights.append(l)
 		_light_t.append(0.0)
 	_build_telegraphs()
+	_build_bolts()
 
 
 # --------------------------------------------------------------------------
 # Events
 # --------------------------------------------------------------------------
 
-func on_player_shot() -> void:
-	Game.shake(shake_on_shot)
+func on_player_shot(amount := -1.0) -> void:
+	Game.shake(shake_on_shot if amount < 0.0 else amount)
 
 
 func on_player_dash(_pos: Vector3) -> void:
@@ -107,12 +112,55 @@ func on_wall_hit(pos: Vector3, normal: Vector3) -> void:
 	spark(pos, wall_spark_color, normal)
 
 
-func on_enemy_hit(pos: Vector3, damage: float, killed: bool) -> void:
+func on_enemy_hit(pos: Vector3, damage: float, killed: bool, kind: StringName = &"bullet") -> void:
 	Game.shake(shake_on_hit)
-	if damage_numbers_enabled:
-		var col := kill_number_color if killed else number_color
-		var s := number_scale * (1.35 if killed else 1.0)
-		damage_number(pos + Vector3(randf_range(-0.3, 0.3), 1.1, randf_range(-0.2, 0.2)), str(roundi(damage)), col, s)
+	if not damage_numbers_enabled:
+		return
+	var col := kill_number_color if killed else number_color
+	var s := number_scale * (1.35 if killed else 1.0)
+	var text := str(roundi(damage))
+	match kind:
+		&"crit", &"slash_crit":
+			col = Color("ffb21e")
+			s *= 1.4
+			text += "!"
+		&"burn":
+			col = Color("ff7a1a")
+			s *= 0.75
+		&"shock":
+			col = Color("9fe8ff")
+			s *= 0.9
+	damage_number(pos + Vector3(randf_range(-0.3, 0.3), 1.1, randf_range(-0.2, 0.2)), text, col, s)
+
+
+## Small coloured pop + label when a status effect lands (label rate-limited).
+func status_pop(pos: Vector3, kind: StringName) -> void:
+	var c: Color = {&"burn": Color("ff7a1a"), &"cryo": Color("9fe8ff"), &"corrode": Color("b6ff3d")}.get(kind, Color.WHITE)
+	spark(pos, c, Vector3.UP)
+	var now := Time.get_ticks_usec()
+	if now - _last_status_usec > 400000:
+		_last_status_usec = now
+		var label: String = {&"burn": "BURN", &"cryo": "CHILLED", &"corrode": "CORRODED"}.get(kind, "")
+		if label != "":
+			text_popup(pos + Vector3.UP * 0.5, label, c, 0.7)
+
+
+## Shock arc between two points (pooled, flickers out in ~0.15 s).
+func lightning(a: Vector3, b: Vector3) -> void:
+	var idx := _bolt_i
+	var l: Array = _bolts[idx]
+	_bolt_i = (_bolt_i + 1) % _bolts.size()
+	var mid := (a + b) * 0.5 + Vector3(randf_range(-0.3, 0.3), randf_range(0.0, 0.4), randf_range(-0.3, 0.3))
+	for k in 2:
+		var seg: MeshInstance3D = l[k]
+		var p0 := a if k == 0 else mid
+		var p1 := mid if k == 0 else b
+		seg.global_position = (p0 + p1) * 0.5
+		if p0.distance_to(p1) > 0.01 and absf((p1 - p0).normalized().dot(Vector3.UP)) < 0.99:
+			seg.look_at(p1, Vector3.UP)
+		seg.scale = Vector3(1, 1, maxf(p0.distance_to(p1), 0.01))
+		seg.visible = true
+	_bolt_t[idx] = 0.15
 
 
 func on_enemy_killed(pos: Vector3, direction: Vector3, tier := 0, silent := false) -> void:
@@ -179,6 +227,28 @@ func telegraph(mode: StringName, pos: Vector3, time: float, tier := 0) -> void:
 	(t.shadow as Node3D).visible = mode == &"drop"
 
 
+func _build_bolts() -> void:
+	var m := BoxMesh.new()
+	m.size = Vector3(0.06, 0.06, 1.0)
+	var mat := ShaderMaterial.new()
+	mat.shader = preload("res://scripts/shaders/neon_fade.gdshader")
+	mat.set_shader_parameter("tint", Color("9fe8ff"))
+	mat.set_shader_parameter("energy", 5.0)
+	for i in 12:
+		var pair: Array = []
+		for k in 2:
+			var mi := MeshInstance3D.new()
+			mi.mesh = m
+			mi.material_override = mat
+			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			mi.top_level = true
+			mi.visible = false
+			add_child(mi)
+			pair.append(mi)
+		_bolts.append(pair)
+		_bolt_t.append(0.0)
+
+
 func _build_telegraphs() -> void:
 	var shader := preload("res://scripts/shaders/neon_fade.gdshader")
 	var tm := TorusMesh.new()
@@ -217,6 +287,12 @@ func _build_telegraphs() -> void:
 
 
 func _process(delta: float) -> void:
+	for i in _bolts.size():
+		if _bolt_t[i] > 0.0:
+			_bolt_t[i] -= delta
+			if _bolt_t[i] <= 0.0:
+				for seg in _bolts[i]:
+					seg.visible = false
 	for i in _lights.size():
 		if _light_t[i] > 0.0:
 			_light_t[i] -= delta

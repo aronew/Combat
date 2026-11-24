@@ -81,8 +81,19 @@ func spawn_now(type: StringName, mode: StringName, pos: Vector3, opts := {}) -> 
 		return null
 	var e: Enemy = free.pop_back()
 	active.append(e)
-	e.spawn_at(pos, mode, opts)
+	e.spawn_at(pos, mode, _depth_opts(opts))
 	return e
+
+
+## Deeper dives: tougher, harder-hitting bugs.
+func _depth_opts(opts: Dictionary) -> Dictionary:
+	var d := Profile.dive_depth
+	if d <= 1:
+		return opts
+	var o := opts.duplicate()
+	o["health_mult"] = float(opts.get("health_mult", 1.0)) * (1.0 + 0.35 * (d - 1))
+	o["damage_mult"] = float(opts.get("damage_mult", 1.0)) * (1.0 + 0.18 * (d - 1))
+	return o
 
 
 ## Non-pooled, hand-placed enemies (turrets).
@@ -91,7 +102,7 @@ func spawn_static(scene: PackedScene, pos: Vector3, yaw: float, mode := &"dorman
 	e.spawner = self
 	add_child(e)
 	active.append(e)
-	var o := opts.duplicate()
+	var o := _depth_opts(opts).duplicate()
 	o["yaw"] = yaw
 	e.spawn_at(pos, mode, o)
 	return e

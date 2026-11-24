@@ -269,6 +269,44 @@ offset_bottom = 70.0
 mouse_filter = 2
 script = ExtResource("4_bar")
 
+[node name="Level" type="Label" parent="Health"]
+layout_mode = 0
+offset_left = 240.0
+offset_top = 14.0
+offset_right = 400.0
+offset_bottom = 46.0
+text = "LV 1"
+horizontal_alignment = 2
+vertical_alignment = 2
+
+[node name="XPTrack" type="ColorRect" parent="Health"]
+layout_mode = 0
+offset_top = 76.0
+offset_right = 394.0
+offset_bottom = 80.0
+mouse_filter = 2
+color = Color(1, 1, 1, 0.12)
+
+[node name="XPFill" type="ColorRect" parent="Health"]
+layout_mode = 0
+offset_top = 76.0
+offset_right = 120.0
+offset_bottom = 80.0
+mouse_filter = 2
+color = Color(1, 0.82, 0.24, 1)
+
+[node name="Toasts" type="VBoxContainer" parent="."]
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -620.0
+offset_top = 150.0
+offset_right = -40.0
+offset_bottom = 420.0
+grow_horizontal = 0
+mouse_filter = 2
+theme_override_constants/separation = 2
+
 [node name="Minimap" type="Control" parent="."]
 layout_mode = 3
 anchors_preset = 3
@@ -414,6 +452,12 @@ horizontal_alignment = 1
 layout_mode = 2
 text = "0 SALVAGE"
 horizontal_alignment = 1
+
+[node name="Loot" type="Label" parent="Results/Box"]
+layout_mode = 2
+text = "LOOT"
+horizontal_alignment = 1
+autowrap_mode = 3
 
 [node name="Spacer" type="Control" parent="Results/Box"]
 custom_minimum_size = Vector2(0, 20)

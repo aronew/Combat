@@ -11,7 +11,7 @@ extends Enemy
 
 
 func _modify_damage(amount: float, direction: Vector3, kind: StringName) -> float:
-	if kind != &"bullet" and kind != &"slash":
+	if not kind in [&"bullet", &"crit", &"slash", &"slash_crit"]:
 		return amount
 	var incoming := -Vector3(direction.x, 0.0, direction.z)
 	if incoming.length_squared() < 0.0001:

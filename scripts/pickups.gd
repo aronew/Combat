@@ -63,6 +63,15 @@ func drop_salvage(pos: Vector3, amount: int) -> void:
 		_nodes[idx].visible = true
 
 
+## Drop an item on the deck as a loot beam.
+func drop_item(pos: Vector3, item: Dictionary) -> void:
+	var d := LootDrop.new()
+	d.setup(item)
+	var p := Game.level.clamp_to_walkable(pos, 0.6) if Game.level else pos
+	d.position = Vector3(p.x, 0.0, p.z)
+	add_child(d)
+
+
 func _process(delta: float) -> void:
 	var p := Game.player
 	var target := p.global_position + Vector3.UP * 0.8 if p and p.alive else Vector3.INF

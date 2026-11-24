@@ -51,6 +51,8 @@ func play(pos: Vector3, direction: Vector3, size := 1.0, ring_color := Color(0, 
 	sparks.restart()
 	chunks.restart()
 	_ring_mat.set_shader_parameter("tint", ring_color if ring_color.a > 0.0 else Palette.NEON_BURST.pick_random())
+	_flash_mat.set_shader_parameter("tint", Color(1.0, 0.55, 0.2) if fire else Color(1.0, 0.96, 0.85))
+	_flash_mat.set_shader_parameter("energy", 1.4 if fire else 2.0)
 	ring.position = Vector3(0.0, -0.3, 0.0)
 	_update_visuals()
 	set_process(true)

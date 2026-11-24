@@ -19,6 +19,14 @@ enum Phase { INFILTRATE, UPLOAD, EXTRACT, LIFT, COMPLETE, FAILED }
 @export var uplink_salvage := 120
 @export var spawn_population := true
 
+@export_group("Rewards")
+## XP per kill by enemy tier (normal, blue, gold, purple); scaled by depth.
+@export var xp_by_tier: Array[int] = [6, 18, 45, 300]
+## Item drop chance by enemy tier; scaled by depth.
+@export var drop_chance_by_tier: Array[float] = [0.012, 0.12, 0.4, 1.0]
+@export var nest_xp := 60
+@export var uplink_xp := 300
+
 var phase := Phase.INFILTRATE
 var haul := 0
 var upload := 0.0
@@ -38,7 +46,7 @@ var _zone_mat: ShaderMaterial
 
 func _ready() -> void:
 	Game.mission = self
-	profile = SaveData.load_profile()
+	Profile.start_dive(maxi(Profile.dive_depth, 1))
 	_build_markers()
 	_begin.call_deferred()
 
@@ -55,7 +63,9 @@ func _begin() -> void:
 			Game.spawner.spawn_static(Game.spawner.turret_scene, t.pos, t.yaw)
 	if lvl.uplink:
 		lvl.uplink.used.connect(_on_uplink_used)
-	Game.banner.emit("OPERATION: " + mission_name, sector_name)
+	for n in lvl.nests:
+		n.destroyed.connect(_on_nest_destroyed)
+	Game.banner.emit("OPERATION: " + mission_name, "%s  ·  DEPTH %d" % [sector_name, Profile.dive_depth])
 	_set_objective("Reach the uplink in the Reactor Ring")
 	_radio(1.0, "HANDLER", "You're down, Breaker. Uplink's in the reactor ring, three sections deep.")
 	_radio(7.0, "HANDLER", "Hive's asleep. Keep it that way: the blade is quiet, the rifle is not.")
@@ -128,6 +138,11 @@ func _upload_done() -> void:
 	phase = Phase.EXTRACT
 	data_secured = true
 	add_haul(uplink_salvage)
+	_give_xp(uplink_xp)
+	# The uplink spits out a data cache: a guaranteed rare-or-better item.
+	var d := Profile.dive_depth
+	var cache := Loot.roll_item(Profile.item_level_for_depth(d), Loot.roll_rarity([0.0, 60.0 - d * 4.0, 32.0 + d * 2.0, 8.0 + d * 2.0]))
+	Game.pickups.drop_item(Game.level.uplink_position + Vector3(0, 0, 2.2), cache)
 	if Game.director:
 		Game.director.start_extraction()
 	Game.banner.emit("UPLINK COMPLETE", "GET TO THE LIFT")
@@ -141,11 +156,7 @@ func _complete() -> void:
 	Game.level.lift.set_state(&"ready")
 	if Game.director:
 		Game.director.stop()
-	profile.banked_salvage += haul
-	profile.dives += 1
-	profile.extractions += 1
-	profile.best_haul = maxi(profile.best_haul, haul)
-	SaveData.save_profile(profile)
+	profile = Profile.bank_dive(haul)
 	_radio(0.0, "HANDLER", "Lift's moving. Good work, Breaker.")
 	Game.mission_phase_changed.emit(phase)
 	Game.end_run(true)
@@ -158,8 +169,7 @@ func fail() -> void:
 	phase = Phase.FAILED
 	if Game.director:
 		Game.director.stop()
-	profile.dives += 1
-	SaveData.save_profile(profile)
+	profile = Profile.lose_dive(haul)
 	_radio(0.0, "HANDLER", "Breaker? ...Signal lost.")
 	Game.mission_phase_changed.emit(phase)
 	Game.end_run(false)
@@ -169,7 +179,7 @@ func fail() -> void:
 func add_haul(amount: int) -> void:
 	if phase == Phase.COMPLETE or phase == Phase.FAILED:
 		return
-	haul += amount
+	haul += roundi(amount * (1.0 + float(Profile.stats().get("salvage", 0.0))))
 	Game.haul_changed.emit(haul)
 
 
@@ -181,9 +191,45 @@ func _summary() -> Dictionary:
 		"best_combo": Game.best_combo,
 		"peak_alert": Game.director.peak_alert if Game.director else 0.0,
 		"time": elapsed,
-		"banked": profile.banked_salvage,
-		"dives": profile.dives,
+		"banked": Profile.data.salvage,
+		"dives": Profile.data.dives,
+		"items": profile.get("items", []),
+		"xp": profile.get("xp", 0),
+		"levels": profile.get("levels", 0),
+		"level": Profile.data.level,
+		"unlocked": profile.get("unlocked", 0),
+		"depth": Profile.dive_depth,
 	}
+
+
+# --------------------------------------------------------------------------
+# Rewards: XP and loot
+# --------------------------------------------------------------------------
+
+func on_enemy_killed(e: Enemy, pos: Vector3, _kind: StringName) -> void:
+	if phase == Phase.COMPLETE or phase == Phase.FAILED:
+		return
+	var d := Profile.dive_depth
+	var type_mult: float = {&"shield": 2.5, &"turret": 3.0, &"burster": 1.2}.get(e.type_id, 1.0)
+	_give_xp(roundi(xp_by_tier[e.tier] * type_mult * (1.0 + 0.25 * (d - 1))))
+	var chance: float = drop_chance_by_tier[e.tier] * (1.0 + 0.15 * (d - 1)) * type_mult
+	if randf() < chance:
+		var rarity := Loot.roll_rarity(Loot.drop_weights(e.tier, d))
+		Game.pickups.drop_item(pos, Loot.roll_item(Profile.item_level_for_depth(d), rarity))
+
+
+func _on_nest_destroyed(nest: HiveNest) -> void:
+	_give_xp(nest_xp)
+	var d := Profile.dive_depth
+	if randf() < 0.6:
+		Game.pickups.drop_item(nest.global_position + Vector3(0, 0, 2.0), Loot.roll_item(Profile.item_level_for_depth(d), Loot.roll_rarity(Loot.drop_weights(1, d))))
+
+
+func _give_xp(amount: int) -> void:
+	var gained := Profile.add_xp(amount)
+	if gained > 0:
+		Game.level_up.emit(Profile.data.level)
+		Game.banner.emit("LEVEL UP", "LEVEL %d  ·  PERK POINT READY AT THE RIG" % Profile.data.level)
 
 
 func objective_position() -> Vector3:

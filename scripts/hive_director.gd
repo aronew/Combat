@@ -161,11 +161,11 @@ func _physics_process(delta: float) -> void:
 			Game.alert_changed.emit(level, alert)
 		&"alarm":
 			_alarm_t += delta
-			var rate := alarm_base_rate + alarm_rate_from_alert * _alarm_intensity + alarm_ramp * _alarm_t
+			var rate := (alarm_base_rate + alarm_rate_from_alert * _alarm_intensity + alarm_ramp * _alarm_t) * _depth_scale()
 			_budget += rate * delta
 			_drain_budget(max_alive_alarm)
 		&"extract":
-			_budget += extract_rate * delta
+			_budget += extract_rate * _depth_scale() * delta
 			_drain_budget(100)
 
 
@@ -183,11 +183,16 @@ func _drain_budget(cap: int) -> void:
 			type = &"burster"
 		var tr := randf()
 		var tier := Enemy.Tier.NORMAL
-		if tr < gold_chance:
+		var tier_scale := 1.0 + 0.5 * (Profile.dive_depth - 1)
+		if tr < gold_chance * tier_scale:
 			tier = Enemy.Tier.GOLD
-		elif tr < gold_chance + blue_chance:
+		elif tr < (gold_chance + blue_chance) * tier_scale:
 			tier = Enemy.Tier.BLUE
 		_spawn_unit(type, tier, &"")
+
+
+func _depth_scale() -> float:
+	return 1.0 + 0.15 * (Profile.dive_depth - 1)
 
 
 ## Pick an entrance near the player: leap from the void, burrow, drop in, or crawl out of a nest.
