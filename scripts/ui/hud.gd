@@ -68,6 +68,7 @@ var _radio_tween: Tween
 var _salvage_tween: Tween
 var _toast_font: Font
 var _chain_label: Label
+var _full_map: Minimap
 var _chain_tween: Tween
 
 
@@ -218,7 +219,15 @@ func _on_phase(phase: int) -> void:
 			progress_root.visible = false
 
 
+func _unhandled_input(event: InputEvent) -> void:
+	if event.is_action_pressed("map") and _full_map:
+		_full_map.visible = not _full_map.visible and not Game.is_game_over
+		get_viewport().set_input_as_handled()
+
+
 func _on_objective(text: String) -> void:
+	if Game.level and Game.level.generated:
+		objective_head.text = "OBJECTIVE   ·   FLOOR %d / %d" % [Profile.dive_floor + 1, Profile.dive_floors]
 	objective_text.text = text
 	var t := create_tween().set_ignore_time_scale(true)
 	objective_text.modulate = Color("ffd23d")
@@ -320,6 +329,7 @@ func _on_kills(kills: int, combo: int) -> void:
 
 func _on_mission_ended(success: bool, s: Dictionary) -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	_full_map.visible = false
 	crosshair.visible = false
 	prompt_label.text = ""
 	res_title.text = "EXTRACTED" if success else "SIGNAL LOST"
@@ -432,3 +442,14 @@ func _style() -> void:
 	_chain_label.add_theme_color_override("font_outline_color", Color("1a0622"))
 	_chain_label.modulate.a = 0.0
 	add_child(_chain_label)
+	# [M] full-floor map overlay.
+	_full_map = Minimap.new()
+	_full_map.full = true
+	_full_map.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_full_map.offset_left = 180.0
+	_full_map.offset_top = 120.0
+	_full_map.offset_right = -180.0
+	_full_map.offset_bottom = -120.0
+	_full_map.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_full_map.visible = false
+	add_child(_full_map)

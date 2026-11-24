@@ -8,6 +8,36 @@ const AUTOPLAY := preload("res://scripts/debug_autoplay.gd")
 func _enter_tree() -> void:
 	# Runs before any child's _ready, so children can register into a clean Game.
 	Game.reset_run()
+	if has_node("Mission"):
+		_setup_dive()
+
+
+## Dive scenes: make sure a dive is running before the Level builds its floor.
+## Dev flags (first load only): --classic (small test level), --seed=N,
+## --floor=N (1-based), --depth=N, --skip-to=uplink (jumps to the bottom floor).
+func _setup_dive() -> void:
+	var first := not Engine.has_meta("dive_flags_done")
+	Engine.set_meta("dive_flags_done", true)
+	var seed_ := -1
+	var floor_ := -1
+	for arg in OS.get_cmdline_user_args():
+		if arg == "--classic":
+			Profile.dive_layout = "classic"
+		elif arg.begins_with("--depth="):
+			Profile.data.max_depth = Profile.MAX_DEPTH
+			Profile.dive_depth = clampi(arg.get_slice("=", 1).to_int(), 1, Profile.MAX_DEPTH)
+		elif first and arg.begins_with("--seed="):
+			seed_ = arg.get_slice("=", 1).to_int()
+		elif first and arg.begins_with("--floor="):
+			floor_ = arg.get_slice("=", 1).to_int() - 1
+		elif first and arg == "--skip-to=uplink":
+			floor_ = 99
+	if not Profile.dive_active:
+		Profile.start_dive(maxi(Profile.dive_depth, 1))
+		if seed_ >= 0:
+			Profile.dive_seed = seed_
+		if floor_ >= 0:
+			Profile.dive_floor = clampi(floor_, 0, Profile.dive_floors - 1)
 
 
 func _ready() -> void:

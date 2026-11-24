@@ -7,7 +7,7 @@ extends Node
 ## Prints FPS, frame times, phase and swarm stats every 2 s, flags stuck bugs,
 ## and can save PNG screenshots at given game times.
 
-const PHASES := ["INFILTRATE", "UPLOAD", "EXTRACT", "LIFT", "COMPLETE", "FAILED"]
+const PHASES := ["INFILTRATE", "UPLOAD", "EXTRACT", "LIFT", "COMPLETE", "FAILED", "DESCEND"]
 
 var _t := 0.0
 var _report_t := 0.0
@@ -33,6 +33,7 @@ var _ended := false
 var _gear := ""
 var _loot_demo := false
 var _blade := false
+var _map_at: Array[float] = []
 var _counters := 0
 var _strikes := 0
 var _best_chain := 0
@@ -69,6 +70,9 @@ func _ready() -> void:
 			Profile._touch()
 		elif arg == "--blade":
 			_blade = true
+		elif arg.begins_with("--map-at="):
+			for v in arg.get_slice("=", 1).split(","):
+				_map_at.append(v.to_float())
 		elif arg == "--loot-demo":
 			_loot_demo = true
 		elif arg.begins_with("--gear="):
@@ -83,10 +87,19 @@ func _ready() -> void:
 		_quit_after = 3.0
 	if Game.player:
 		Game.player.autopilot = true
-		if _skip == "uplink" and Game.level:
-			Game.player.global_position = Game.level.uplink_position + Vector3(0, 0, 4.0)
+		if _skip == "uplink" and Game.level and Game.level.uplink:
+			Game.player.global_position = Game.level.clamp_to_walkable(Game.level.uplink_position + Vector3(0, 0, 4.0))
 	Game.mission_ended.connect(_on_mission_ended)
-	print("[autoplay] started god=%s stealth=%s skip=%s" % [_god, _stealth, _skip])
+	# Game time keeps counting across floors (each floor reloads the scene).
+	_t = float(Engine.get_meta("autoplay_t", 0.0))
+	_report_t = 0.0
+	while _next_shot < _shot_times.size() and _shot_times[_next_shot] < _t:
+		_next_shot += 1
+	print("[autoplay] started god=%s stealth=%s skip=%s floor=%d/%d layout=%s seed=%d" % [_god, _stealth, _skip,
+		Profile.dive_floor + 1, Profile.dive_floors, Profile.dive_layout, Profile.dive_seed])
+	if Game.level and Game.level.generated:
+		print("[autoplay] floor '%s': %d rooms, %d regions, %d placements, %d breakers, bounds %s" % [Game.level.floor_name,
+			Game.level.rooms.size(), Game.level.regions.size(), Game.level.placements.size(), Game.level.breakers.size(), Game.level.bounds])
 
 
 ## In-memory only (never saved): equip a random high-tier kit, each gun archetype
@@ -124,6 +137,15 @@ func _on_mission_ended(success: bool, s: Dictionary) -> void:
 
 func _process(delta: float) -> void:
 	_t += delta
+	Engine.set_meta("autoplay_t", _t)
+	# --map-at=a,b: open the [M] map for 1.5 s at these times (for screenshots).
+	if Game.hud and Game.hud.get("_full_map"):
+		var show := false
+		for at in _map_at:
+			if _t >= at and _t < at + 1.5:
+				show = true
+		if not _map_at.is_empty():
+			Game.hud._full_map.visible = show
 	if _loot_demo and _t > 1.0 and Game.pickups and Game.player:
 		_loot_demo = false
 		Profile.persist = false
@@ -195,12 +217,14 @@ func _drive(delta: float) -> void:
 	if goal == Vector3.INF:
 		goal = pos
 	if m.phase == Mission.Phase.INFILTRATE:
-		goal = lvl.uplink_position + Vector3(0, 0, 1.6)
-		if pos.distance_to(lvl.uplink_position) < 2.4:
+		# Next breaker, the cargo lift, or the uplink.
+		if Vector2(pos.x - goal.x, pos.z - goal.z).length() < 2.2:
 			p.auto_interact = true
 	elif m.phase == Mission.Phase.UPLOAD:
 		_orbit += delta * 1.5
-		goal = lvl.uplink_position + Vector3(cos(_orbit) * 3.5, 0, 2.5 + sin(_orbit) * 1.5)
+		goal = lvl.clamp_to_walkable(lvl.uplink_position + Vector3(cos(_orbit) * 3.5, 0, sin(_orbit) * 2.5))
+	elif m.phase == Mission.Phase.DESCEND:
+		goal = pos
 	var nav := lvl.get_nav_target(pos, goal)
 	var to := nav - pos
 	to.y = 0.0

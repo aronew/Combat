@@ -8,7 +8,7 @@ extends Node3D
 ##   COMPLETE    salvage banked   /   FAILED (death): salvage lost
 ## Also spawns the hand-placed population, drives radio chatter and the objective beacon.
 
-enum Phase { INFILTRATE, UPLOAD, EXTRACT, LIFT, COMPLETE, FAILED }
+enum Phase { INFILTRATE, UPLOAD, EXTRACT, LIFT, COMPLETE, FAILED, DESCEND }
 
 @export var mission_name := "FIRST DIVE"
 @export var sector_name := "DEEPWORKS // SECTOR 1"
@@ -38,6 +38,7 @@ var elapsed := 0.0
 var profile := {}
 
 var _elite_spawned := false
+var _breakers_on := 0
 var _lift_t := 0.0
 var _in_zone := true
 var _seen_rooms := {}
@@ -49,7 +50,8 @@ var _zone_mat: ShaderMaterial
 
 func _ready() -> void:
 	Game.mission = self
-	Profile.start_dive(maxi(Profile.dive_depth, 1))
+	if not Profile.dive_active:
+		Profile.start_dive(maxi(Profile.dive_depth, 1))
 	_build_markers()
 	_begin.call_deferred()
 
@@ -68,13 +70,127 @@ func _begin() -> void:
 		lvl.uplink.used.connect(_on_uplink_used)
 	for n in lvl.nests:
 		n.destroyed.connect(_on_nest_destroyed)
-	Game.banner.emit("OPERATION: " + mission_name, "%s  ·  DEPTH %d" % [sector_name, Profile.dive_depth])
-	_set_objective("Reach the uplink in the Reactor Ring")
-	_radio(1.0, "HANDLER", "You're down, Breaker. Uplink's in the reactor ring, three sections deep.")
-	_radio(7.0, "HANDLER", "Hive's asleep. Keep it that way: the blade is quiet, the rifle is not.")
-	_radio(14.0, "HANDLER", "Sleeping bugs die silent if you get the blade in first. [Q] to swap.")
+	for b in lvl.breakers:
+		b.used.connect(_on_breaker_used.bind(b))
+	if lvl.cargo:
+		lvl.cargo.used.connect(_on_cargo_used)
+		lvl.cargo.set_enabled(lvl.breakers.is_empty())
+	_restore_carry()
+	if lvl.generated:
+		mission_name = "DEEP DESCENT"
+		sector_name = "DEEPWORKS // SECTOR %d" % Profile.dive_depth
+		var fl := "FLOOR %d / %d" % [Profile.dive_floor + 1, Profile.dive_floors]
+		if Profile.dive_floor == 0:
+			Game.banner.emit("OPERATION: " + mission_name, "%s  ·  %s  ·  DEPTH %d" % [fl, lvl.floor_name.to_upper(), Profile.dive_depth])
+		else:
+			Game.banner.emit(fl, "%s  ·  DEPTH %d" % [lvl.floor_name.to_upper(), Profile.dive_depth])
+		_floor_radio(lvl)
+	else:
+		Game.banner.emit("OPERATION: " + mission_name, "%s  ·  DEPTH %d" % [sector_name, Profile.dive_depth])
+		_radio(1.0, "HANDLER", "You're down, Breaker. Uplink's in the reactor ring, three sections deep.")
+		_radio(7.0, "HANDLER", "Hive's asleep. Keep it that way: the blade is quiet, the rifle is not.")
+		_radio(14.0, "HANDLER", "Sleeping bugs die silent if you get the blade in first. [Q] to swap.")
+	_update_floor_objective()
 	Game.mission_phase_changed.emit(phase)
 	Game.haul_changed.emit(haul)
+
+
+func _floor_radio(lvl: Level) -> void:
+	var f := Profile.dive_floor
+	var floors := Profile.dive_floors
+	if f == 0:
+		_radio(1.0, "HANDLER", "You're in, Breaker. The uplink's at the bottom of this complex, %d floors down." % floors)
+		if not lvl.is_final_floor:
+			_radio(7.0, "HANDLER", "Cargo lifts are dead. Throw the breakers on each floor, then ride the lift down.")
+		_radio(14.0, "HANDLER", "Hive's asleep. The blade is quiet, the rifle is not. [Q] to swap, [M] for the map.")
+	elif lvl.is_final_floor:
+		_radio(1.0, "HANDLER", "Bottom floor: the reactor core. Find the uplink and plug in.")
+		_radio(8.0, "HANDLER", "Your way out is the lift you just rode down. Remember where it is.")
+	else:
+		_radio(1.0, "HANDLER", "Floor %d: %s. Same drill: breakers, then the cargo lift." % [f + 1, lvl.floor_name])
+
+
+func _update_floor_objective() -> void:
+	var lvl := Game.level
+	if lvl.is_final_floor:
+		_set_objective("Reach the uplink in the reactor core" if lvl.generated else "Reach the uplink in the Reactor Ring")
+		return
+	var total := lvl.breakers.size()
+	if _breakers_on < total:
+		_set_objective("Throw the breakers (%d/%d) to power the cargo lift" % [_breakers_on, total])
+	else:
+		_set_objective("Ride the cargo lift down")
+
+
+func _on_breaker_used(_by: Node, b: Interactable) -> void:
+	if not b.enabled:
+		return
+	b.set_enabled(false)
+	_breakers_on += 1
+	Game.shake(0.25)
+	if Game.fx:
+		Game.fx.text_popup(b.global_position + Vector3.UP * 2.0, "POWER ON", Color("ffd23d"), 1.1)
+	# Breakers are loud: anything nearby comes to look.
+	if Game.director:
+		Game.director.make_noise(b.global_position, 14.0, 10.0)
+	var left := Game.level.breakers.size() - _breakers_on
+	if left > 0:
+		_radio(0.2, "HANDLER", "Breaker's on. %d to go." % left)
+	else:
+		if Game.level.cargo:
+			Game.level.cargo.set_enabled(true)
+		Game.banner.emit("POWER RESTORED", "GET TO THE CARGO LIFT")
+		_radio(0.2, "HANDLER", "That's power to the cargo lift. Get on it.")
+	_update_floor_objective()
+
+
+func _on_cargo_used(_by: Node) -> void:
+	if phase != Phase.INFILTRATE or Game.transitioning:
+		return
+	phase = Phase.DESCEND
+	var p := Game.player
+	if p:
+		p.input_locked = true
+		p.grant_invulnerability(5.0)
+	if Game.director:
+		Game.director.stop()
+	Profile.dive_carry = _carry_state()
+	Profile.dive_floor += 1
+	Game.mission_phase_changed.emit(phase)
+	var next_final := Profile.dive_floor >= Profile.dive_floors - 1
+	Game.transition_to(get_tree().current_scene.scene_file_path, "DESCENDING",
+		"FLOOR %d / %d%s" % [Profile.dive_floor + 1, Profile.dive_floors, "  ·  REACTOR CORE" if next_final else ""])
+
+
+func _carry_state() -> Dictionary:
+	var p := Game.player
+	return {
+		"haul": haul, "kills": Game.kills, "best_combo": Game.best_combo, "elapsed": elapsed,
+		"health": p.health if p else 0.0, "weapon": p.weapon if p else 0,
+		"alert": Game.director.alert if Game.director else 0.0,
+		"peak_alert": Game.director.peak_alert if Game.director else 0.0,
+	}
+
+
+## Next floor: bring the haul, health (plus a patch-up on the ride), kills and some of the alert.
+func _restore_carry() -> void:
+	var c := Profile.dive_carry
+	if c.is_empty():
+		return
+	Profile.dive_carry = {}
+	haul = int(c.haul)
+	elapsed = float(c.elapsed)
+	Game.kills = int(c.kills)
+	Game.best_combo = int(c.best_combo)
+	Game.kills_changed.emit(Game.kills, 0)
+	var p := Game.player
+	if p:
+		p.health = minf(float(c.health) + p.max_health * 0.25, p.max_health)
+		Game.player_health_changed.emit(p.health, p.max_health)
+		p.set_weapon(int(c.weapon))
+	if Game.director:
+		Game.director.peak_alert = float(c.peak_alert)
+		Game.director.add_alert(float(c.alert) * 0.5)
 
 
 func _physics_process(delta: float) -> void:
@@ -156,6 +272,8 @@ func _upload_done() -> void:
 
 func _complete() -> void:
 	phase = Phase.COMPLETE
+	if Game.player:
+		Game.player.grant_invulnerability(3600.0)  # the lift has you; stragglers can't touch you
 	Game.level.lift.set_state(&"ready")
 	if Game.director:
 		Game.director.stop()
@@ -241,10 +359,27 @@ func _give_xp(amount: int) -> void:
 func objective_position() -> Vector3:
 	match phase:
 		Phase.INFILTRATE, Phase.UPLOAD:
+			if not Game.level.is_final_floor:
+				return _next_breaker_position()
 			return Game.level.uplink_position
 		Phase.EXTRACT, Phase.LIFT:
 			return Game.level.lift_position
 	return Vector3.INF
+
+
+## Nearest breaker still off, or the cargo lift once they're all on.
+func _next_breaker_position() -> Vector3:
+	var lvl := Game.level
+	var best := lvl.cargo_position
+	var best_d := INF
+	var from := Game.player.global_position if Game.player else lvl.player_start
+	for b in lvl.breakers:
+		if b.enabled:
+			var d := from.distance_to(b.global_position)
+			if d < best_d:
+				best_d = d
+				best = b.global_position
+	return best
 
 
 func is_player_in_zone() -> bool:
@@ -256,6 +391,8 @@ func _set_objective(text: String) -> void:
 
 
 func _room_chatter(p: Player) -> void:
+	if Game.level.generated:
+		return
 	var room := Game.level.room_of(p.global_position)
 	if room == &"" or _seen_rooms.has(room):
 		return

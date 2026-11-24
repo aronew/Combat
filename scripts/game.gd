@@ -52,6 +52,11 @@ var _slowmo_end_usec := 0
 var _slowmo_scale := 1.0
 var _base_time_scale := 1.0
 var _delayed: Array[Dictionary] = []
+## True while fading between scenes (floor changes).
+var transitioning := false
+var _fade_layer: CanvasLayer
+var _fade: ColorRect
+var _fade_title: Label
 
 
 func _ready() -> void:
@@ -256,6 +261,48 @@ func restart() -> void:
 	_base_time_scale = 1.0
 	Engine.time_scale = 1.0
 	get_tree().reload_current_scene()
+
+
+## Fade to black, change scene, fade back in (used between dive floors).
+func transition_to(path: String, title := "", sub := "") -> void:
+	if transitioning:
+		return
+	transitioning = true
+	_ensure_fade()
+	_fade_title.text = title + ("\n" + sub if sub != "" else "")
+	var t := create_tween().set_ignore_time_scale(true)
+	t.tween_property(_fade, "color:a", 1.0, 0.5)
+	t.parallel().tween_property(_fade_title, "modulate:a", 1.0, 0.5)
+	t.tween_interval(0.5)
+	t.tween_callback(go_to_scene.bind(path))
+	t.tween_interval(0.6)
+	t.tween_property(_fade, "color:a", 0.0, 0.7)
+	t.parallel().tween_property(_fade_title, "modulate:a", 0.0, 0.7)
+	t.tween_callback(func() -> void: transitioning = false)
+
+
+func _ensure_fade() -> void:
+	if _fade_layer:
+		return
+	_fade_layer = CanvasLayer.new()
+	_fade_layer.layer = 90
+	add_child(_fade_layer)
+	_fade = ColorRect.new()
+	_fade.color = Color(0.0, 0.01, 0.02, 0.0)
+	_fade.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_fade.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_fade_layer.add_child(_fade)
+	_fade_title = Label.new()
+	_fade_title.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_fade_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_fade_title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_fade_title.add_theme_font_size_override("font_size", 46)
+	_fade_title.add_theme_color_override("font_color", Color("19f4ff"))
+	_fade_title.add_theme_constant_override("outline_size", 10)
+	_fade_title.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
+	_fade_title.modulate.a = 0.0
+	_fade_title.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_fade_layer.add_child(_fade_title)
 
 
 func go_to_scene(path: String) -> void:

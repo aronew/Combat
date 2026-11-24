@@ -178,6 +178,9 @@ var blade_cooldown := 0.24
 
 func _ready() -> void:
 	Game.player = self
+	# Start on the floor's arrival point (generated floors move it around).
+	if Game.level and Game.level.player_start != Vector3.INF:
+		global_position = Game.level.player_start
 	_base_max_health = max_health
 	_base_move_speed = move_speed
 	_base_dash_cooldown = dash_cooldown
@@ -937,6 +940,11 @@ func _update_ghosts(delta: float) -> void:
 # --------------------------------------------------------------------------
 # Damage
 # --------------------------------------------------------------------------
+
+## Invincible for `seconds` (floor transitions, cutscene-ish moments).
+func grant_invulnerability(seconds: float) -> void:
+	_invuln = maxf(_invuln, seconds)
+
 
 func is_invincible() -> bool:
 	return _invuln > 0.0 or not alive

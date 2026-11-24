@@ -412,8 +412,16 @@ func _build_contracts() -> void:
 	var ml := _lbl(mods, 18, Color("9ff8ff"), _font_bold)
 	ml.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	v.add_child(ml)
+	var floors := ComplexGen.floor_count(d)
+	var rooms := 0
+	for f in floors:
+		rooms += ComplexGen.room_count(d, f)
+	var cl := _lbl("The Deepworks complex: %d floors, about %d rooms. Throw the breakers to power each cargo lift down; the uplink is on the bottom floor. Extract on the lift you rode down." % [floors, rooms], 17, Color(1, 1, 1, 0.85), _font)
+	cl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	v.add_child(cl)
 	v.add_child(_lbl("Record: %d dives  ·  %d extractions  ·  best haul %d" % [Profile.data.dives, Profile.data.extractions, Profile.data.best_haul], 16, DIM, _font))
 	v.add_child(_btn("DEPLOY TO DEPTH %d" % d, deploy.bind(d), Vector2(0, 64)))
+	v.add_child(_btn("TEST LEVEL  (small, one floor)", deploy.bind(d, "classic"), Vector2(0, 40)))
 
 
 # ---------------- button handlers ----------------
@@ -466,8 +474,8 @@ func _on_depth(d: int) -> void:
 	_rebuild_open()
 
 
-func deploy(depth: int) -> void:
-	Profile.start_dive(depth)
+func deploy(depth: int, layout := "complex") -> void:
+	Profile.start_dive(depth, layout)
 	close()
 	Game.go_to_scene("res://scenes/dive.tscn")
 

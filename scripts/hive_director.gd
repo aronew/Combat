@@ -172,7 +172,7 @@ func _physics_process(delta: float) -> void:
 func _drain_budget(cap: int) -> void:
 	while _budget >= 1.0:
 		_budget -= 1.0
-		if Game.spawner and Game.spawner.alive_count() >= cap:
+		if Game.spawner and Game.spawner.engaged_count() >= cap:
 			_budget = 0.0
 			return
 		var r := randf()
