@@ -439,6 +439,7 @@ func _build_contracts() -> void:
 	v.add_child(_lbl("Record: %d dives  ·  %d extractions  ·  best haul %d" % [Profile.data.dives, Profile.data.extractions, Profile.data.best_haul], 16, DIM, _font))
 	v.add_child(_btn("DEPLOY TO DEPTH %d" % d, deploy.bind(d), Vector2(0, 64)))
 	v.add_child(_btn("TEST LEVEL  (small, one floor)", deploy.bind(d, "classic"), Vector2(0, 40)))
+	v.add_child(_btn("VFX ARENA  (dev: effects test room)", _open_vfx_arena, Vector2(0, 40)))
 
 
 # ---------------- button handlers ----------------
@@ -495,6 +496,11 @@ func _on_perk(id: String) -> void:
 func _on_dest(key: String) -> void:
 	dest_choice = key
 	_rebuild_open()
+
+
+func _open_vfx_arena() -> void:
+	close()
+	Game.go_to_scene("res://scenes/test/vfx_arena.tscn")
 
 
 func _on_depth(d: int) -> void:

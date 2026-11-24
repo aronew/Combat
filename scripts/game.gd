@@ -184,8 +184,11 @@ func explode(pos: Vector3, radius: float, enemy_damage: float, player_damage: fl
 			d.take_hit(enemy_damage, dd.normalized(), 0.0, TEAM_NEUTRAL, &"explosion")
 	if director:
 		director.make_noise(pos, director.explosion_noise_radius, director.explosion_noise_alert)
-	shake(0.45)
-	hitstop(0.05)
+	if fx == null:
+		shake(0.45)
+		hitstop(0.05)
+	# (With FX, the explosion effect's CameraFeedback profile shakes and stops time,
+	# attenuated by distance from the player.)
 
 
 ## Explosion after a short fuse, so chain reactions ripple outward instead of recursing.

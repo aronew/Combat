@@ -452,9 +452,16 @@ func _update_shooting() -> void:
 	if fm:
 		fm.set_shader_parameter("tint", Color(gun.color).lerp(Color.WHITE, 0.55))
 	muzzle_light.light_color = Color(gun.color).lerp(Color.WHITE, 0.3)
-	muzzle_flash.visible = true
-	muzzle_flash.rotation.z = randf() * TAU
-	muzzle_light.light_energy = _flash_light
+	# Guns with a framework muzzle effect use it (it follows the muzzle);
+	# the rest keep the built-in flash mesh and light.
+	if Game.fx and Game.fx.muzzle(String(gun.get("code", "")), muzzle.global_position, shot_dir, muzzle, Color(gun.color)):
+		_flash_t = 0.0
+		muzzle_flash.visible = false
+		muzzle_light.light_energy = 0.0
+	else:
+		muzzle_flash.visible = true
+		muzzle_flash.rotation.z = randf() * TAU
+		muzzle_light.light_energy = _flash_light
 	if String(gun.get("code", "")) == "RL" and Game.fx:
 		Game.fx.rail_beam(origin, shot_dir, float(gun.speed) * float(gun.lifetime), Color(gun.color))
 	if Game.fx:

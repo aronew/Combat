@@ -1,0 +1,44 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scripts/test/vfx_arena.gd" id="1_arena"]
+[ext_resource type="Script" path="res://scripts/environment_controller.gd" id="2_env"]
+[ext_resource type="PackedScene" path="res://scenes/player.tscn" id="4_player"]
+[ext_resource type="PackedScene" path="res://scenes/camera_rig.tscn" id="5_cam"]
+[ext_resource type="PackedScene" path="res://scenes/spawner.tscn" id="6_spawner"]
+[ext_resource type="Script" path="res://scripts/projectile_pool.gd" id="7_pool"]
+[ext_resource type="Script" path="res://scripts/fx.gd" id="8_fx"]
+[ext_resource type="Script" path="res://scripts/pickups.gd" id="10_pickups"]
+
+[sub_resource type="Environment" id="Env_main"]
+background_mode = 1
+
+[node name="VfxArena" type="Node3D"]
+script = ExtResource("1_arena")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Env_main")
+script = ExtResource("2_env")
+
+[node name="Moonlight" type="DirectionalLight3D" parent="."]
+rotation_degrees = Vector3(-58, -150, 0)
+light_color = Color(0.72, 0.9, 1, 1)
+light_energy = 0.5
+shadow_enabled = true
+shadow_opacity = 0.8
+directional_shadow_max_distance = 70.0
+
+[node name="Player" parent="." instance=ExtResource("4_player")]
+
+[node name="CameraRig" parent="." instance=ExtResource("5_cam")]
+target_path = NodePath("../Player")
+
+[node name="Spawner" parent="." instance=ExtResource("6_spawner")]
+
+[node name="Projectiles" type="Node3D" parent="."]
+script = ExtResource("7_pool")
+
+[node name="FX" type="Node3D" parent="."]
+script = ExtResource("8_fx")
+
+[node name="Pickups" type="Node3D" parent="."]
+script = ExtResource("10_pickups")

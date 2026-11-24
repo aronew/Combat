@@ -5,6 +5,7 @@ extends StaticBody3D
 
 @export var dps_window := 3.0
 @export var hit_radius := 0.6
+var surface_kind := Surface.Kind.METAL
 
 var _hits: Array = []  # [time, damage]
 var _t := 0.0

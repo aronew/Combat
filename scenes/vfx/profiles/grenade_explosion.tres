@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="VfxProfile" format=3]
+
+[ext_resource type="Script" path="res://scripts/vfx/camera_feedback.gd" id="1_h4o63"]
+[ext_resource type="Script" path="res://scripts/vfx/vfx_profile.gd" id="2_cmgdw"]
+
+[sub_resource type="Resource" id="Resource_rqx5y"]
+script = ExtResource("1_h4o63")
+shake = 0.5
+kick = 0.32
+hitstop = 0.045
+
+[resource]
+script = ExtResource("2_cmgdw")
+color = Color(1, 0.75, 0.45, 1)
+feedback = SubResource("Resource_rqx5y")

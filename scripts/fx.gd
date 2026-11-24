@@ -64,6 +64,23 @@ var _bolts: Array = []
 var _bolt_t: Array[float] = []
 var _bolt_i := 0
 var _merge := {}
+## The VFX framework's effects: key -> [scene, pool size]. Pools are filled at
+## start; a busy pool reuses its oldest effect. Add a weapon or surface here and
+## in art_src/vfx/build_vfx.gd.
+const VFX := {
+	&"rifle_muzzle": ["res://scenes/vfx/rifle_muzzle.tscn", 6],
+	&"impact_organic": ["res://scenes/vfx/impact_organic.tscn", 24],
+	&"impact_metal": ["res://scenes/vfx/impact_metal.tscn", 16],
+	&"impact_shield": ["res://scenes/vfx/impact_shield.tscn", 12],
+	&"impact_environment": ["res://scenes/vfx/impact_environment.tscn", 16],
+	&"grenade_explosion": ["res://scenes/vfx/grenade_explosion.tscn", 6],
+}
+## Which effect each gun archetype (Loot.GUNS "code") uses for its muzzle.
+## Guns without an entry keep the player's built-in flash for now.
+const WEAPON_MUZZLE := {"AR": &"rifle_muzzle"}
+var _vfx := {}
+var _vfx_next := {}
+var _vfx_root: Node3D
 var _beams: Array[MeshInstance3D] = []
 var _beam_t: Array[float] = []
 var _beam_i := 0
@@ -111,6 +128,7 @@ func _ready() -> void:
 	_build_beams()
 	_build_splats()
 	_build_corpses()
+	_build_vfx()
 
 
 # --------------------------------------------------------------------------
@@ -127,15 +145,16 @@ func on_player_dash(_pos: Vector3) -> void:
 
 ## Two layers: sparks in the bolt's colour back toward the shooter, and an
 ## ichor spray in the bug's colour out the far side.
-func on_projectile_hit(pos: Vector3, direction: Vector3, bolt_color := Color(0, 0, 0, 0), ichor := Color(0, 0, 0, 0)) -> void:
+func on_projectile_hit(pos: Vector3, direction: Vector3, bolt_color := Color(0, 0, 0, 0), ichor := Color(0, 0, 0, 0), surface := Surface.Kind.ORGANIC) -> void:
+	# The bolt's own colour still flickers at the hit (weapon identity); the
+	# surface decides the rest.
 	spark(pos, bolt_color if bolt_color.a > 0.0 else shot_spark_color, -direction)
-	if ichor.a > 0.0:
-		spark(pos, ichor, direction + Vector3.UP * 0.4)
+	impact(surface, pos, -direction, ichor)
 	Audio.play_at(&"impact_bug", pos)
 
 
-func on_wall_hit(pos: Vector3, normal: Vector3) -> void:
-	spark(pos, wall_spark_color, normal)
+func on_wall_hit(pos: Vector3, normal: Vector3, surface := Surface.Kind.ENVIRONMENT) -> void:
+	impact(surface, pos, normal)
 	Audio.play_at(&"impact_metal", pos)
 
 
@@ -250,10 +269,9 @@ func on_enemy_land(pos: Vector3, heavy: bool) -> void:
 
 
 func on_blocked(pos: Vector3, direction: Vector3) -> void:
-	# The blue spark carries it; the word is a rare reminder, not a stream.
+	# The hex ripple carries it; the word is a rare reminder, not a stream.
 	Audio.play_at(&"shield_block", pos)
-	spark(pos, Color("3aa0ff"), -direction)
-	spark(pos, Color("bfe0ff"), -direction + Vector3.UP * 0.5)
+	impact(Surface.Kind.SHIELD, pos, -direction)
 	var now := Time.get_ticks_usec()
 	if now - _last_block_usec > 2_500_000:
 		_last_block_usec = now
@@ -263,17 +281,10 @@ func on_blocked(pos: Vector3, direction: Vector3) -> void:
 ## Big fiery blast with a light flash (barrels, bursters).
 func explosion(pos: Vector3, size := 2.0) -> void:
 	Audio.play_at(&"explosion", pos, clampf((size - 2.0) * 2.0, -6.0, 3.0))
-	burst(pos, Vector3.ZERO, size, Color("ff8a1e"), true)
-	burst(pos + Vector3.UP * 0.2, Vector3.ZERO, size * 0.35, Color("ffb050"), true)
+	# Every explosion (barrels, bursters, the Hive Popper, grenades) uses the
+	# grenade effect, scaled; its profile carries the camera shake and hitstop.
+	play_vfx(&"grenade_explosion", {"position": pos, "scale": clampf(size / 2.4, 0.5, 1.8), "intensity": 1.0})
 	splat(Vector3(pos.x, 0.0, pos.z), Color(0.02, 0.015, 0.01, 0.85), size * 1.3)
-	if Graphics.is_low():
-		return  # point lights are the expensive part on weak GPUs
-	var l := _lights[_light_i]
-	_light_t[_light_i] = 0.3
-	_light_i = (_light_i + 1) % _lights.size()
-	l.global_position = pos + Vector3.UP * 1.0
-	l.light_energy = explosion_light_energy
-	l.visible = true
 
 
 func text_popup(pos: Vector3, text: String, color: Color, scale_mult := 1.0) -> void:
@@ -611,3 +622,82 @@ func _tick_trails(delta: float) -> void:
 			c.global_position.y -= delta * 0.6
 			if float(st.t) > CORPSE_LIFE + 1.2:
 				c.visible = false
+
+
+# --------------------------------------------------------------------------
+# VFX framework: pooled effects (scripts/vfx, scenes/vfx)
+# --------------------------------------------------------------------------
+
+func _build_vfx() -> void:
+	_vfx_root = Node3D.new()
+	_vfx_root.name = "VFX"
+	add_child(_vfx_root)
+	for key in VFX:
+		var scene: PackedScene = load(VFX[key][0])
+		var list: Array[VfxEffect] = []
+		for i in int(VFX[key][1]):
+			var e: VfxEffect = scene.instantiate()
+			e.name = "%s_%d" % [key, i]
+			_vfx_root.add_child(e)
+			list.append(e)
+		_vfx[key] = list
+		_vfx_next[key] = 0
+
+
+## Play a pooled effect (see VfxEffect.play for params). Applies the effect's
+## camera feedback unless params has "no_feedback". Returns the effect, or null.
+func play_vfx(key: StringName, params := {}) -> VfxEffect:
+	var list: Array = _vfx.get(key, [])
+	if list.is_empty():
+		return null
+	var e: VfxEffect = null
+	for c in list:
+		if not c.active:
+			e = c
+			break
+	if e == null:
+		# All busy: reuse the oldest (round robin).
+		var i: int = _vfx_next[key]
+		e = list[i]
+		_vfx_next[key] = (i + 1) % list.size()
+	e.play(params)
+	if e.profile and e.profile.feedback and not params.get("no_feedback", false):
+		e.profile.feedback.apply(params.get("position", e.global_position), params.get("direction", Vector3.ZERO), float(params.get("intensity", 1.0)))
+	return e
+
+
+## Bullet impact by surface. `normal` points out of the surface (toward the
+## shooter for hits on bugs). `color` tints organic hits (the bug's ichor).
+func impact(surface: int, pos: Vector3, normal: Vector3, color := Color(0, 0, 0, 0)) -> void:
+	var key := StringName("impact_" + Surface.NAMES[clampi(surface, 0, Surface.NAMES.size() - 1)])
+	var params := {"position": pos, "direction": normal}
+	if color.a > 0.0:
+		params.color = color
+	play_vfx(key, params)
+	if surface == Surface.Kind.ORGANIC and color.a > 0.0 and randf() < 0.3:
+		splat(Vector3(pos.x, 0.0, pos.z) + Vector3(-normal.x, 0, -normal.z) * 0.4, Color(color.r * 0.55, color.g * 0.55, color.b * 0.4, 0.7), 0.5)
+
+
+## Muzzle effect for a gun archetype code, if it has one. Returns true if played.
+func muzzle(code: String, pos: Vector3, dir: Vector3, follow: Node3D, color := Color(0, 0, 0, 0)) -> bool:
+	var key: StringName = WEAPON_MUZZLE.get(code, &"")
+	if key == &"":
+		return false
+	var params := {"position": pos, "direction": dir, "follow": follow}
+	if color.a > 0.0:
+		params.color = color.lerp(Color.WHITE, 0.45)
+	return play_vfx(key, params) != null
+
+
+## Pool usage and live particles (arena stats overlay).
+func vfx_stats() -> Dictionary:
+	var out := {}
+	for key in _vfx:
+		var busy := 0
+		var parts := 0
+		for e in _vfx[key]:
+			if e.active:
+				busy += 1
+				parts += e.particle_estimate()
+		out[key] = [busy, (_vfx[key] as Array).size(), parts]
+	return out
