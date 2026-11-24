@@ -37,8 +37,12 @@ extends Node3D
 @export_group("Void")
 @export var void_fog_density := 0.04
 @export var void_fog_top := -2.5
-@export var void_fog_albedo := Color("a8ccd2")
-@export var void_fog_emission := Color("10667a")
+## The void's colour comes from this grey albedo lit by the bluish moonlight
+## (its volumetric fog energy) and the ambient light; see the WorldEnvironment.
+@export var void_fog_albedo := Color("b6bec6")
+## Keep this black (or very dark): Godot packs fog-volume emission into a small
+## buffer, and brighter values can overflow into a bright green void.
+@export var void_fog_emission := Color("000000")
 
 const ROOMS := [
 	{"id": &"lift", "name": "Drop Lift", "rect": Rect2(-5, 12, 10, 8)},

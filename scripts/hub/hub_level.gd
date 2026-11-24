@@ -49,7 +49,7 @@ func _rebuild() -> void:
 	_kit.crate(6.2, 6.6, 0, 1)
 	_kit.crate(7.9, 6.6, 0, 2)
 	_kit.crate(-12.0, -1.0, 90, 1)
-	_kit.void_dressing(r.grow(6.0), -2.5, 0.04, Color("a8ccd2"), Color("10667a"))
+	_kit.void_dressing(r.grow(6.0), -2.5, 0.04, Color("b6bec6"), Color.BLACK)
 
 	if Engine.is_editor_hint():
 		return

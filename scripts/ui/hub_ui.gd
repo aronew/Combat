@@ -391,8 +391,8 @@ func _build_augments() -> void:
 
 func _build_contracts() -> void:
 	var v := _make_panel("CONTRACTS", Vector2(1000, 640))
-	v.add_child(_lbl("OPERATION: FIRST DIVE", 26, Palette.HUD_WHITE, _font_title))
-	var brief := _lbl("Deepworks Sector 1. Drop to the reactor ring, run the uplink, hold until it finishes, and get back to the lift. Gear and salvage come home only if you do.", 18, DIM, _font)
+	v.add_child(_lbl("OPERATION: DEEP DESCENT", 26, Palette.HUD_WHITE, _font_title))
+	var brief := _lbl("Get down through the Deepworks to the reactor uplink, hold it until the upload finishes, and ride back out. Gear and salvage come home only if you do.", 18, DIM, _font)
 	brief.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	v.add_child(brief)
 	v.add_child(_lbl("DEPTH", 18, DIM, _font_bold))
