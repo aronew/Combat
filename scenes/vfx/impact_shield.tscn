@@ -73,34 +73,34 @@ color_ramp = SubResource("GradientTexture1D_31eww")
 [sub_resource type="QuadMesh" id="QuadMesh_58fa8"]
 size = Vector2(0.035, 0.26)
 
-[node name="ImpactShield" type="Node3D" unique_id=1523950758]
+[node name="ImpactShield" type="Node3D" unique_id=1560042038]
 script = ExtResource("1_urbhk")
 duration = 0.4
 profile = ExtResource("2_rxtv0")
 
-[node name="Hex" type="MeshInstance3D" parent="." unique_id=280118014]
+[node name="Hex" type="MeshInstance3D" parent="." unique_id=2011323087]
 material_override = SubResource("ShaderMaterial_xuvr0")
 cast_shadow = 0
 mesh = SubResource("QuadMesh_lmgwa")
 
-[node name="Pulse" type="Node" parent="Hex" unique_id=573667903]
+[node name="Pulse" type="Node" parent="Hex" unique_id=1428319860]
 script = ExtResource("4_6vily")
 life = 0.25
 scale_from = Vector3(0.6, 0.6, 0.6)
 scale_to = Vector3(1.25, 1.25, 1.25)
 ease_power = 2.0
 
-[node name="Flash" type="MeshInstance3D" parent="." unique_id=1102436198]
+[node name="Flash" type="MeshInstance3D" parent="." unique_id=1697762685]
 material_override = SubResource("ShaderMaterial_cfxww")
 cast_shadow = 0
 mesh = SubResource("QuadMesh_8mrt6")
 
-[node name="Pulse" type="Node" parent="Flash" unique_id=1099618194]
+[node name="Pulse" type="Node" parent="Flash" unique_id=155705090]
 script = ExtResource("4_6vily")
 life = 0.05
 scale_to = Vector3(0.4, 0.4, 0.4)
 
-[node name="Sparks" type="GPUParticles3D" parent="." unique_id=1972832534]
+[node name="Sparks" type="GPUParticles3D" parent="." unique_id=1310039013]
 material_override = SubResource("ShaderMaterial_eee76")
 cast_shadow = 0
 emitting = false

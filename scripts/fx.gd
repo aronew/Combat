@@ -283,7 +283,10 @@ func explosion(pos: Vector3, size := 2.0) -> void:
 	Audio.play_at(&"explosion", pos, clampf((size - 2.0) * 2.0, -6.0, 3.0))
 	# Every explosion (barrels, bursters, the Hive Popper, grenades) uses the
 	# grenade effect, scaled; its profile carries the camera shake and hitstop.
-	play_vfx(&"grenade_explosion", {"position": pos, "scale": clampf(size / 2.4, 0.5, 1.8), "intensity": 1.0})
+	# Camera feedback scales with the blast: a burster pop is not a grenade.
+	var e := play_vfx(&"grenade_explosion", {"position": pos, "scale": clampf(size / 2.4, 0.5, 1.8), "no_feedback": true})
+	if e and e.profile and e.profile.feedback:
+		e.profile.feedback.apply(pos, Vector3.ZERO, clampf(size / 2.4, 0.4, 1.2))
 	splat(Vector3(pos.x, 0.0, pos.z), Color(0.02, 0.015, 0.01, 0.85), size * 1.3)
 
 

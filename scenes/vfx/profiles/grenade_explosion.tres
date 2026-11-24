@@ -5,9 +5,11 @@
 
 [sub_resource type="Resource" id="Resource_rqx5y"]
 script = ExtResource("1_h4o63")
-shake = 0.5
-kick = 0.32
-hitstop = 0.045
+shake = 0.36
+kick = 0.18
+hitstop = 0.04
+near = 3.0
+far = 22.0
 
 [resource]
 script = ExtResource("2_cmgdw")
