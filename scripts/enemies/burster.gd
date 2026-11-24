@@ -25,6 +25,7 @@ func _attack_tick(player: Player, _delta: float) -> void:
 	var d := Vector2(player.global_position.x - global_position.x, player.global_position.z - global_position.z)
 	if d.length() < trigger_range * _tier_scale:
 		_fuse = fuse_time
+		play_anim_oneshot(&"swell")
 
 
 func _custom_tick(delta: float) -> bool:
