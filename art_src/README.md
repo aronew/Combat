@@ -47,3 +47,27 @@ Instance the `.glb` under the enemy's `Visual` node and remove the primitive mes
 Hit flash and tier scaling work on anything under `Visual`. If the model has an
 `AnimationPlayer`, `enemy.gd` plays `idle`/`walk` automatically and `attack` on a
 successful bite (`play_anim_oneshot()` is there for special enemies).
+
+## Generated models (Higgsfield / Meshy)
+
+Some models start as AI image-to-3D output instead of a script. These are the exception to
+"the scripts are the source": the source is the generated file, and a script cleans it up.
+
+**The hunter** (player character, `assets/models/hunter/`):
+- `hunter.glb`: 31k triangles, 24-bone humanoid skin, 1024 px textures (colour, metal/rough,
+  normal; WebP inside the GLB). Clips: `idle`, `run_forward`, `run_back_left`, `run_back_right`,
+  `strafe_left` (mirror it for right), `walk_back` (these loop), and `roll`, `sword_combo`,
+  `sword_parry`, `reload`, `hit`, `death` (one-shots). The roll, combo, parry, hit and reload stay
+  in place: the game moves the character.
+- `hive_rifle.glb`, `chitin_blade.glb`: the weapons, decimated to about 5k and 4k triangles.
+- Built by `blender/import_hunter.py SRC_DIR` from the raw downloads listed (by job id) in
+  `higgsfield/hunter_jobs.tsv`. The concept sheets they came from are the hunter mockups.
+- Every animation clip was generated as a separate re-rig of the same mesh, and those skeletons
+  differ slightly (a few cm, a few degrees of bone roll). The script retargets each clip onto the
+  first rig by bone name (each bone's armature-space rotation from rest, hips scaled by height),
+  so all clips share one skin. To add a clip: generate it on the same model, save it as
+  `SRC_DIR/clips/<name>.glb`, add it to `LOOPS` or `IN_PLACE` if needed, and rerun.
+- `DERIVED` in the script cuts game-speed pieces out of library clips (`swing_1..3` from the
+  combo, `roll_fast`, `hit_quick`, `death_fall`) and mirrors `strafe_left` into `strafe_right`.
+- In game she is `scripts/player/hunter_body.gd`, created by `player.gd` (`use_hunter`; off
+  brings back the old placeholder body).

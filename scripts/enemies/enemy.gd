@@ -25,6 +25,8 @@ const TIER_SALVAGE := [1, 3, 6, 30]
 @export var display_name := "Swarmer"
 ## Colour of the bug's blood: hit sprays, floor splats.
 @export var ichor_color := Color("ffb03b")
+## What bullets hit (Surface.Kind): organic bugs, metal turrets...
+@export_enum("Organic", "Metal", "Shield", "Environment") var surface_kind := 0
 
 @export_group("Stats")
 @export var base_health := 30.0

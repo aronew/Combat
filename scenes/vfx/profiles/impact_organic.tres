@@ -1,0 +1,7 @@
+[gd_resource type="Resource" script_class="VfxProfile" format=3]
+
+[ext_resource type="Script" path="res://scripts/vfx/vfx_profile.gd" id="1_uwyql"]
+
+[resource]
+script = ExtResource("1_uwyql")
+color = Color(1, 0.6901961, 0.23137255, 1)

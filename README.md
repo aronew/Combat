@@ -229,6 +229,8 @@ scripts/
   level/         level.gd (builds a floor, region-graph nav, spawn queries), complex_gen.gd (generated floors,
                  room purposes), level_kit.gd (deck/rail/truss builders, batched into MultiMeshes),
                  props.gd (prop catalogue: footprints, collision)
+  player/        hunter_body.gd (the hunter's animated body: clips by move direction, aimed upper
+                 body, swing/roll/hit/death one-shots, weapons, dash ghosts, rim glow)
   enemies/       enemy.gd (base: stealth states, senses, entrances, tiers) + special types
   objects/       interactable, explosive_barrel, hive_nest, laser_grid, blast_door, extraction_lift, training_dummy
   items/         loot.gd (item tables, generation, tooltips), player_stats.gd, perks.gd, loot_drop.gd
@@ -244,6 +246,7 @@ assets/          models (.glb from art_src/), shared materials, audio/sfx (sound
 art_src/         Blender Python scripts that build the models
 assets/models/   enemies/ (rigged bugs) and props/ (set dressing), exported from art_src/blender
 art_src/blender/ Blender Python scripts that build the models (see art_src/README.md)
+art_src/vfx/     build_vfx.gd: authors the combat effects in scenes/vfx/ (see "Combat VFX" below)
 reference/       concept art (ignored by the importer via .gdignore)
 ```
 
@@ -258,7 +261,9 @@ reference/       concept art (ignored by the importer via .gdignore)
 | Mission | uplink duration and zone radius, lift countdown, elite timing, XP and drop chance by tier |
 | Spawner | pool sizes, max alive, spawn warning times, swarm separation |
 | Enemy scenes | health, speed, damage, senses (sight range and cone), shield arc, burst radius, beam timing |
-| FX | hitstop, shake, damage numbers, explosion lights |
+| HunterBody (`scripts/player/hunter_body.gd`) | clip speeds, swing/roll/hit timing, weapon size and grip, material and rim-glow tuning, hero scale |
+| FX | hitstop, shake, damage numbers, VFX registry and pool sizes, which gun uses which muzzle effect |
+| `scenes/vfx/profiles/*.tres` | per-effect colour, intensity, scale, particle count, light, camera feedback (shake, kick, hitstop, distance falloff) |
 | Level | lamp colours per room, hive glow, void fog |
 | WorldEnvironment / CameraRig | fog, glow, grading / framing, follow, shake |
 
@@ -268,6 +273,33 @@ population density and idle activities). Props are modelled in
 `art_src/blender/build_props.py`; rebuild with `python art_src/blender/build_props.py`
 (bpy 5.x) and reimport. The hand-built test level's
 layout is data at the top of `scripts/level/level.gd`.
+
+## Combat VFX
+
+A small framework for weapon and impact effects, built from GPU particles, a few
+camera-facing meshes, one shared shader pair and a short light:
+
+- `scripts/fx.gd` is the VFX manager. `Game.fx.play_vfx(key, {position, direction, scale,
+  color, intensity, follow})` takes an effect from its pool (the oldest one is recycled when
+  the pool is full). `impact(surface, pos, normal)` picks the effect for the surface and
+  `muzzle(gun_code, ...)` the gun's flash (`WEAPON_MUZZLE`; a gun without one keeps the old flash).
+- `scripts/vfx/`: `VfxEffect` (pooled root: emitters, delays, recolouring, quality scaling),
+  `VfxPulse` (one-shot scale/fade/light animation on a mesh or light), `VfxProfile` (the
+  tunables), `CameraFeedback` (shake, directional kick and hitstop that fade with distance from
+  the player; any system can use it), `Surface` (organic, metal, shield, environment).
+- Surfaces: enemies have `surface_kind` (the sentry turret is metal), props can set the
+  `surface` meta; anything else counts as environment.
+- `scripts/shaders/vfx/`: additive (`vfx_add`) and alpha (`vfx_mix`) variants of one shader with
+  procedural shapes (dot, streak, star, ring, eroding puff, hex ripple, flare). No textures.
+- Effects so far: assault rifle muzzle, bullet impacts on the four surfaces, grenade explosion.
+  They are authored in code: edit `art_src/vfx/build_vfx.gd`, then rebuild with
+  `godot --headless --path . --script res://art_src/vfx/build_vfx.gd`.
+- Particle counts scale with the graphics quality (100/75/45 %) and lights are off on Low.
+
+**VFX arena** (contract board in the Rig, "VFX ARENA", or `scenes/test/vfx_arena.tscn`): a test
+room with targets of each surface. Keys: `1` muzzle demo, `2` impacts on every surface,
+`3` explosion at the cursor, `G` throw a grenade, `4` spawn a pack, `5` stress test,
+`T` slow motion, `K` clear, `F1` stats (FPS, draw calls, pool use, live particles).
 
 ## Dev helper
 

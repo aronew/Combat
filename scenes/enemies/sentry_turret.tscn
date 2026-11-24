@@ -72,6 +72,7 @@ script = ExtResource("1_turret")
 type_id = &"turret"
 display_name = "Sentry Turret"
 ichor_color = Color(0.3, 1, 0.9, 1)
+surface_kind = 1
 base_health = 140.0
 base_speed = 0.0
 contact_damage = 0.0

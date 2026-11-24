@@ -46,6 +46,11 @@ enum Weapon { RIFLE, BLADE }
 ## Loot.BLADES, scaled by item level, rarity, affixes and perks).
 @export_group("Shooting")
 @export var barrel_offset := 0.14
+## Height bolts travel at (gameplay: low cover and short bugs are tuned around it), whatever
+## height the rifle's muzzle is drawn at.
+@export var bolt_height := 1.1
+## Use the animated hunter model (false keeps the old placeholder body).
+@export var use_hunter := true
 
 @export_group("Blade")
 @export var blade_combo_window := 0.6
@@ -149,6 +154,10 @@ var _knock := Vector3.ZERO
 var _ghosts: Array[MeshInstance3D] = []
 var _ghost_index := 0
 var _ghost_mesh: Mesh
+## The animated hunter (null when use_hunter is off).
+var body: HunterBody
+const PLACEHOLDER_PARTS := ["Body", "Torso", "ChestPlate", "Head", "Visor", "HelmetStripe",
+	"ShoulderL", "ShoulderR", "Backpack", "ThighL", "ThighR", "Gun"]
 
 var weapon := Weapon.RIFLE
 var current_interactable: Interactable
@@ -229,6 +238,14 @@ func _ready() -> void:
 	muzzle_flash.visible = false
 	muzzle_light.light_energy = 0.0
 	_ghost_mesh = ($Visual/Body as MeshInstance3D).mesh
+	if use_hunter:
+		body = HunterBody.new()
+		body.name = "Hunter"
+		visual.add_child(body)
+		for part in PLACEHOLDER_PARTS:
+			var n := visual.get_node_or_null(part) as Node3D
+			if n:
+				n.visible = false
 	_build_ghosts()
 	_build_blade()
 	_setup_body_rig()
@@ -414,7 +431,9 @@ func _update_shooting() -> void:
 	_fire_cd = maxf(_fire_cd, 0.0)
 	_barrel = -_barrel
 	var side := aim_dir.cross(Vector3.UP).normalized()
-	var origin := muzzle.global_position + side * barrel_offset * _barrel
+	var origin := muzzle.global_position + (side * barrel_offset * _barrel if body == null else Vector3.ZERO)
+	if body:
+		origin.y = global_position.y + bolt_height
 	# Bolts converge on the cursor (at bolt height), not parallel to the body's aim
 	# line: what's under the crosshair is what gets hit.
 	var shot_dir := aim_dir
@@ -441,20 +460,30 @@ func _update_shooting() -> void:
 	Audio.play(SHOT_SOUNDS.get(String(gun_item.get("archetype", "rifle")), &"rifle_shot"))
 	_recoil = minf(_recoil + 0.35 + float(gun.shake) * 5.0, 1.6)
 	_gun_kick = minf(_gun_kick + 0.6 + float(gun.shake) * 4.0, 1.6)
+	if body:
+		body.kick(0.6 + float(gun.shake) * 4.0)
 	var fl: Array = FLASH.get(String(gun.get("code", "AR")), FLASH.AR)
 	_flash_len = fl[1]
 	_flash_light = fl[2]
 	_flash_t = _flash_len
 	var flash_scale: Vector3 = fl[0]
 	muzzle_flash.scale = flash_scale * randf_range(0.85, 1.15)
-	muzzle_flash.position.z = -0.95 - flash_scale.z * 0.12
+	if body == null:
+		muzzle_flash.position.z = -0.95 - flash_scale.z * 0.12
 	var fm := muzzle_flash.material_override as ShaderMaterial
 	if fm:
 		fm.set_shader_parameter("tint", Color(gun.color).lerp(Color.WHITE, 0.55))
 	muzzle_light.light_color = Color(gun.color).lerp(Color.WHITE, 0.3)
-	muzzle_flash.visible = true
-	muzzle_flash.rotation.z = randf() * TAU
-	muzzle_light.light_energy = _flash_light
+	# Guns with a framework muzzle effect use it (it follows the muzzle);
+	# the rest keep the built-in flash mesh and light.
+	if Game.fx and Game.fx.muzzle(String(gun.get("code", "")), muzzle.global_position, shot_dir, muzzle, Color(gun.color)):
+		_flash_t = 0.0
+		muzzle_flash.visible = false
+		muzzle_light.light_energy = 0.0
+	else:
+		muzzle_flash.visible = true
+		muzzle_flash.rotation.z = randf() * TAU
+		muzzle_light.light_energy = _flash_light
 	if String(gun.get("code", "")) == "RL" and Game.fx:
 		Game.fx.rail_beam(origin, shot_dir, float(gun.speed) * float(gun.lifetime), Color(gun.color))
 	if Game.fx:
@@ -497,6 +526,9 @@ func set_weapon(w: int) -> void:
 
 
 func _apply_weapon_visuals() -> void:
+	if body:
+		body.set_rifle_mode(weapon == Weapon.RIFLE)
+		return
 	$Visual/Gun.visible = weapon == Weapon.RIFLE
 	if _blade_node:
 		_blade_node.visible = weapon == Weapon.BLADE
@@ -624,6 +656,8 @@ func _swing(dir: Vector3) -> void:
 	var dmg := (blade_finisher_damage if finisher else blade_damage) * chain_mult
 	_show_slash(finisher, dir)
 	_start_swing_anim(finisher)
+	if body:
+		body.swing(_combo_step)
 	var cleaver := String(blade_item.get("archetype", "mono")) == "cleaver"
 	if finisher:
 		Audio.play(&"blade_finisher", 0.0, 0.85 if cleaver else 1.0)
@@ -744,7 +778,7 @@ func _start_swing_anim(finisher: bool) -> void:
 
 
 func _animate_blade(delta: float) -> void:
-	if _blade_node == null:
+	if _blade_node == null or body:
 		return
 	if _swing_t > 0.0:
 		_swing_t = maxf(_swing_t - delta, 0.0)
@@ -767,6 +801,7 @@ func _build_blade() -> void:
 	_blade_node = Node3D.new()
 	_blade_node.position = Vector3(0.38, 1.05, -0.35)
 	_blade_node.rotation_degrees = Vector3(-70, 0, 0)
+	_blade_node.visible = body == null
 	visual.add_child(_blade_node)
 	var blade := MeshInstance3D.new()
 	var bm := BoxMesh.new()
@@ -972,7 +1007,9 @@ func _start_dash(wish: Vector3) -> void:
 	_ghost_t = 0.0
 	if Profile.has_legendary("bulwark"):
 		_bulwark_t = dash_duration + 1.5
-	_squash_v += 9.0
+	_squash_v += 9.0 if body == null else 3.0
+	if body:
+		body.roll()
 	if Game.fx:
 		Game.fx.on_player_dash(global_position)
 		Game.fx.burst(global_position + Vector3.UP * 0.15, -_dash_dir, 0.45, Color(0.75, 0.85, 0.95, 0.5))
@@ -993,6 +1030,14 @@ func get_dash_cooldown_left() -> float:
 
 func _build_ghosts() -> void:
 	var shader := preload("res://scripts/shaders/neon_fade.gdshader")
+	if body:
+		var gm := ShaderMaterial.new()
+		gm.shader = shader
+		gm.set_shader_parameter("tint", Palette.NEON_CYAN)
+		gm.set_shader_parameter("energy", 1.6)
+		gm.set_shader_parameter("edge_softness", 0.6)
+		body.build_ghosts(5, gm)
+		return
 	for i in 8:
 		var g := MeshInstance3D.new()
 		g.mesh = _ghost_mesh
@@ -1011,6 +1056,9 @@ func _build_ghosts() -> void:
 
 
 func _spawn_ghost() -> void:
+	if body:
+		body.spawn_ghost()
+		return
 	var g := _ghosts[_ghost_index]
 	_ghost_index = (_ghost_index + 1) % _ghosts.size()
 	g.global_transform = ($Visual/Body as Node3D).global_transform
@@ -1019,6 +1067,18 @@ func _spawn_ghost() -> void:
 
 
 func _update_ghosts(delta: float) -> void:
+	if body:
+		for g in body.ghosts():
+			if not g.visible:
+				continue
+			var life: float = g.get_meta("life") - delta
+			g.set_meta("life", life)
+			if life <= 0.0:
+				g.visible = false
+			else:
+				for m in body.ghost_meshes(g):
+					((m as MeshInstance3D).material_override as ShaderMaterial).set_shader_parameter("fade", life / 0.22 * 0.7)
+		return
 	for g in _ghosts:
 		if not g.visible:
 			continue
@@ -1069,6 +1129,8 @@ func take_damage(amount: float, from_position: Vector3) -> bool:
 		_knock = away.normalized() * hurt_knockback
 		var local := Basis(Vector3.UP, visual.rotation.y).inverse() * away.normalized()
 		_flinch = Vector2(local.z, -local.x) * 0.45
+	if body:
+		body.hit()
 		if Game.camera_rig:
 			Game.camera_rig.kick(away, 0.35)
 	health_changed.emit(health, max_health)
@@ -1083,8 +1145,12 @@ func take_damage(amount: float, from_position: Vector3) -> bool:
 
 func _die() -> void:
 	alive = false
-	visual.visible = false
 	velocity = Vector3.ZERO
+	if body:
+		body.die()  # she falls and stays down
+		visual.visible = true
+	else:
+		visual.visible = false
 	if Game.fx:
 		Game.fx.on_player_death(global_position + Vector3.UP * 0.8)
 	died.emit()
@@ -1117,6 +1183,8 @@ func _setup_body_rig() -> void:
 func _animate_body(delta: float) -> void:
 	if not alive:
 		return
+	if body:
+		_drive_hunter()
 	var yaw := visual.rotation.y
 	var flat_v := Vector3(velocity.x, 0.0, velocity.z)
 	var local := Basis(Vector3.UP, yaw).inverse() * flat_v
@@ -1132,7 +1200,7 @@ func _animate_body(delta: float) -> void:
 	# Stride: phase advances with distance covered, so feet don't skate.
 	_phase = fmod(_phase + spd * delta / stride_length * TAU, TAU)
 	_stride_amt = lerpf(_stride_amt, ratio if _dash_t <= 0.0 else 0.0, 1.0 - exp(-12.0 * delta))
-	var bob := absf(sin(_phase)) * bob_height * _stride_amt
+	var bob := absf(sin(_phase)) * bob_height * _stride_amt if body == null else 0.0
 	var sway := sin(_phase) * 0.045 * _stride_amt
 
 	# Recoil decays fast; the gun snaps back a little slower than the body.
@@ -1148,7 +1216,7 @@ func _animate_body(delta: float) -> void:
 	visual.rotation.z = _lean.y + _flinch.y + sway
 	var back := Basis(Vector3.UP, yaw) * Vector3(0, 0, 1)
 	visual.position = Vector3(0, bob, 0) + back * _recoil * recoil_body
-	var sq := clampf(_squash, -0.6, 1.4)
+	var sq := clampf(_squash, -0.6, 1.4) * (1.0 if body == null else 0.4)
 	visual.scale = Vector3(1.0 + 0.1 * sq, 1.0 - 0.14 * sq, 1.0 + 0.1 * sq)
 
 	# Legs swing along the direction of travel relative to facing.
@@ -1161,3 +1229,18 @@ func _animate_body(delta: float) -> void:
 	if _gun_node:
 		_gun_node.position = _gun_base + Vector3(0, 0.02 * _gun_kick, _gun_kick * recoil_gun)
 		_gun_node.rotation.x = _gun_kick * 0.22
+
+
+## Feeds the hunter's animation: movement relative to her facing picks the run clip, and the
+## rifle's muzzle drives where shots and the flash come from.
+func _drive_hunter() -> void:
+	var flat_v := Vector3(velocity.x, 0.0, velocity.z)
+	if _dash_t > 0.0 or _strike_t > 0.0:
+		flat_v = Vector3.ZERO  # the roll and the strike clips carry the body
+	var local := Basis(Vector3.UP, visual.rotation.y).inverse() * flat_v
+	var ref := maxf(current_move_speed(), 0.1)
+	body.set_move(Vector2(local.x, -local.z) / ref, flat_v.length())
+	var tip := body.muzzle_position()
+	muzzle.global_position = tip
+	muzzle_flash.global_position = tip + aim_dir * 0.08
+	muzzle_light.global_position = tip + aim_dir * 0.2 + Vector3.UP * 0.1

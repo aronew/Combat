@@ -100,7 +100,7 @@ func _physics_process(delta: float) -> void:
 			if col and col.has_method("take_hit") and not (col is Enemy):
 				col.take_hit(_p.get("damage", 10.0), _velocity.normalized(), _p.get("knockback", 5.0), Game.TEAM_PLAYER, &"bullet")
 			if Game.fx:
-				Game.fx.on_wall_hit(wall.position, wall.normal)
+				Game.fx.on_wall_hit(wall.position, wall.normal, Surface.of(col))
 		deactivate()
 		return
 	global_position = to
@@ -121,7 +121,7 @@ func _hit_enemy(enemy: Enemy) -> void:
 	if dealt <= 0.0:
 		return
 	if Game.fx:
-		Game.fx.on_projectile_hit(enemy.global_position + Vector3.UP * 0.4, dir, _p.get("color", Color("19f4ff")), enemy.ichor_color)
+		Game.fx.on_projectile_hit(enemy.global_position + Vector3.UP * 0.4, dir, _p.get("color", Color("19f4ff")), enemy.ichor_color, enemy.surface_kind)
 	_apply_elements(enemy, dealt)
 	if was_alive and not enemy.is_active() and _p.get("splitter", false) and int(_p.get("generation", 0)) == 0:
 		_split(enemy.global_position + Vector3.UP * 1.0, dir)
