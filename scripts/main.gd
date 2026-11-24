@@ -14,7 +14,8 @@ func _enter_tree() -> void:
 
 ## Dive scenes: make sure a dive is running before the Level builds its floor.
 ## Dev flags (first load only): --classic (small test level), --seed=N,
-## --floor=N (1-based), --depth=N, --skip-to=uplink (jumps to the bottom floor).
+## --floor=N (1-based), --depth=N, --skip-to=uplink (jumps to the bottom floor),
+## --dest=deepworks|starship|foundry.
 func _setup_dive() -> void:
 	var first := not Engine.has_meta("dive_flags_done")
 	Engine.set_meta("dive_flags_done", true)
@@ -23,6 +24,8 @@ func _setup_dive() -> void:
 	for arg in OS.get_cmdline_user_args():
 		if arg == "--classic":
 			Profile.dive_layout = "classic"
+		elif arg.begins_with("--dest="):
+			Profile.dive_destination = arg.get_slice("=", 1)
 		elif arg.begins_with("--depth="):
 			Profile.data.max_depth = Profile.MAX_DEPTH
 			Profile.dive_depth = clampi(arg.get_slice("=", 1).to_int(), 1, Profile.MAX_DEPTH)

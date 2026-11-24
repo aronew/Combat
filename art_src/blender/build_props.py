@@ -45,6 +45,17 @@ MATERIALS = {
     "GlowGreen": ((0.3, 1.0, 0.4), 0.0, 0.5, (0.3, 1.0, 0.4), 3.0),
     "GlowRed": ((1.0, 0.15, 0.1), 0.0, 0.5, (1.0, 0.12, 0.08), 4.0),
     "Screen": ((0.05, 0.2, 0.3), 0.0, 0.3, (0.15, 0.6, 0.9), 1.6),
+    # Starship
+    "HullPaint": ((0.30, 0.32, 0.35), 0.45, 0.45, None, 0.0),
+    "HullDark": ((0.07, 0.075, 0.085), 0.6, 0.4, None, 0.0),
+    "HazardYellow": ((0.85, 0.6, 0.04), 0.15, 0.5, None, 0.0),
+    "GlowTeal": ((0.25, 0.95, 0.9), 0.0, 0.5, (0.25, 0.95, 0.9), 4.0),
+    # Replaced in Godot by an animated star-field shader (Props.place).
+    "SpaceGlass": ((0.02, 0.03, 0.08), 0.0, 0.1, (0.05, 0.1, 0.3), 1.0),
+    # Foundry
+    "Iron": ((0.11, 0.1, 0.095), 0.75, 0.55, None, 0.0),
+    "Rust": ((0.28, 0.12, 0.05), 0.3, 0.8, None, 0.0),
+    "GlowMolten": ((1.0, 0.45, 0.08), 0.0, 0.4, (1.0, 0.42, 0.06), 7.0),
 }
 
 
@@ -309,6 +320,114 @@ def locker_row(p):
             p.box((0.3, 0.02, 0.02), (x, 0.255, z), "Grille", 0.0)
 
 
+
+# ---------------------------------------------------------------------------
+# Starship (Cargo Deck / Teal Ring mockups)
+# ---------------------------------------------------------------------------
+
+def ship_pillar(p):
+    """Round deck pillar with a vented collar and glowing red bands."""
+    p.cyl(0.62, 0.25, (0, 0, 0.125), "HullDark", segments=20)
+    p.cyl(0.52, 3.0, (0, 0, 1.75), "HullPaint", segments=20)
+    p.cyl(0.6, 0.3, (0, 0, 3.3), "HullDark", segments=20)
+    for z in (0.75, 2.55):
+        p.cyl(0.55, 0.16, (0, 0, z), "GlowRed", segments=20)
+    p.cyl(0.56, 0.6, (0, 0, 1.65), "Grille", segments=20)
+    for k in range(4):
+        a = k * math.pi / 2
+        p.box((0.08, 0.08, 2.6), (math.cos(a) * 0.53, math.sin(a) * 0.53, 1.75), "HullDark", 0.01)
+
+
+def hazard_crate(p):
+    """Yellow cargo crate with black hazard bands and dark corner guards."""
+    p.box((1.4, 1.0, 0.9), (0, 0, 0.45), "HazardYellow", 0.06)
+    for x in (-0.45, 0.45):
+        p.box((0.16, 1.03, 0.92), (x, 0, 0.45), "HullDark", 0.02)
+    p.box((1.42, 0.3, 0.05), (0, 0, 0.92), "HullDark", 0.01)
+    for x in (-0.66, 0.66):
+        for y in (-0.46, 0.46):
+            p.box((0.12, 0.12, 0.94), (x, y, 0.47), "HullDark", 0.02)
+    p.box((0.3, 0.02, 0.08), (0, 0.51, 0.7), "GlowWhite", 0.0)
+
+
+def hull_window(p):
+    """3 m hull wall section with a wide viewport onto space (front = +Y)."""
+    p.box((3.0, 0.4, 0.5), (0, 0, 0.25), "HullDark", 0.03)
+    p.box((3.0, 0.4, 0.6), (0, 0, 2.95), "HullDark", 0.03)
+    for x in (-1.38, 1.38):
+        p.box((0.24, 0.42, 3.2), (x, 0, 1.6), "HullPaint", 0.03)
+    p.box((2.52, 0.08, 2.2), (0, 0.06, 1.6), "SpaceGlass", 0.0)
+    for x in (-0.42, 0.42):
+        p.box((0.08, 0.14, 2.2), (x, 0.12, 1.6), "HullDark", 0.0)
+    p.box((2.6, 0.12, 0.08), (0, 0.16, 0.48), "GlowRed", 0.0)
+    p.box((3.0, 0.5, 0.15), (0, 0, 3.25), "MetalDark", 0.02)
+
+
+def supply_pod(p):
+    """Cargo pod lying in a cradle, with a red status light."""
+    p.cyl(0.55, 1.9, (0, 0, 0.7), "HullPaint", axis="X", segments=18)
+    for x in (-0.95, 0.95):
+        p.cyl(0.58, 0.12, (x, 0, 0.7), "HullDark", axis="X", segments=18)
+    for x in (-0.55, 0.55):
+        p.box((0.2, 1.1, 0.35), (x, 0, 0.17), "HullDark", 0.02)
+    p.box((1.5, 0.05, 0.1), (0, 0.56, 0.7), "HazardYellow", 0.0)
+    p.box((0.12, 0.05, 0.12), (0.7, 0.57, 0.95), "GlowRed", 0.0)
+
+
+# ---------------------------------------------------------------------------
+# Foundry (Furnace Chasm mockup)
+# ---------------------------------------------------------------------------
+
+def crucible(p):
+    """Molten-metal crucible: iron vessel, glowing pour, banded and riveted."""
+    p.cyl(1.25, 0.25, (0, 0, 0.12), "Iron", segments=24)
+    p.cyl(1.1, 2.0, (0, 0, 1.2), "Iron", segments=24, radius2=1.2)
+    p.cyl(1.22, 0.14, (0, 0, 2.25), "MetalDark", segments=24)
+    p.cyl(1.08, 0.05, (0, 0, 2.34), "GlowMolten", segments=24)
+    for z in (0.6, 1.4):
+        p.cyl(1.16, 0.12, (0, 0, z), "Rust", segments=24)
+    p.box((0.5, 0.35, 0.3), (0, 1.15, 2.05), "Iron", 0.03)
+    p.box((0.3, 0.2, 0.06), (0, 1.28, 2.2), "GlowMolten", 0.0)
+    for k in range(3):
+        a = k * 2 * math.pi / 3 + 0.5
+        p.box((0.22, 0.22, 2.2), (math.cos(a) * 1.15, math.sin(a) * 1.15, 1.1), "MetalDark", 0.02)
+
+
+def smoke_stack(p):
+    """Exhaust vent: squat stack with a grille and a glow deep inside."""
+    p.cyl(0.55, 0.2, (0, 0, 0.1), "MetalDark", segments=16)
+    p.cyl(0.42, 1.4, (0, 0, 0.9), "Iron", segments=16)
+    p.cyl(0.48, 0.1, (0, 0, 0.6), "Rust", segments=16)
+    p.cyl(0.47, 0.12, (0, 0, 1.6), "MetalDark", segments=16)
+    p.cyl(0.4, 0.03, (0, 0, 1.68), "GlowMolten", segments=16)
+    for k in range(4):
+        p.box((0.84, 0.05, 0.05), (0, 0, 1.72), "Grille", 0.0, rot_z=k * math.pi / 4)
+
+
+def furnace_pillar(p):
+    """Tall furnace column with glowing slits (Furnace Chasm towers)."""
+    p.box((1.5, 1.5, 0.3), (0, 0, 0.15), "MetalDark", 0.03)
+    p.cyl(0.65, 3.6, (0, 0, 2.1), "Iron", segments=8)
+    for z in (1.2, 2.2, 3.2):
+        p.cyl(0.7, 0.14, (0, 0, z), "Rust", segments=8)
+    for k in range(4):
+        a = k * math.pi / 2 + math.pi / 8
+        p.box((0.12, 0.08, 0.7), (math.cos(a) * 0.62, math.sin(a) * 0.62, 1.7), "GlowMolten", 0.0, rot_z=a)
+        p.box((0.12, 0.08, 0.7), (math.cos(a) * 0.62, math.sin(a) * 0.62, 2.7), "GlowMolten", 0.0, rot_z=a)
+    p.cyl(0.5, 0.4, (0, 0, 4.1), "MetalDark", segments=8)
+
+
+def ingot_stack(p):
+    """Pallet of cast ingots, the top row still glowing."""
+    p.box((1.3, 1.0, 0.14), (0, 0, 0.07), "MetalDark", 0.01)
+    for row in range(3):
+        mat = "GlowMolten" if row == 2 else "Iron"
+        for k in range(4 if row % 2 == 0 else 3):
+            if row % 2 == 0:
+                p.box((1.2, 0.2, 0.16), (0, -0.33 + k * 0.22, 0.22 + row * 0.17), mat, 0.03)
+            else:
+                p.box((0.22, 0.9, 0.16), (-0.33 + k * 0.33, 0, 0.22 + row * 0.17), mat, 0.03)
+
 PROPS = {
     "ac_unit": ac_unit,
     "electrical_box": electrical_box,
@@ -325,6 +444,14 @@ PROPS = {
     "floor_vent": floor_vent,
     "planter": planter,
     "locker_row": locker_row,
+    "ship_pillar": ship_pillar,
+    "hazard_crate": hazard_crate,
+    "hull_window": hull_window,
+    "supply_pod": supply_pod,
+    "crucible": crucible,
+    "smoke_stack": smoke_stack,
+    "furnace_pillar": furnace_pillar,
+    "ingot_stack": ingot_stack,
 }
 
 

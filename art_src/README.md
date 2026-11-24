@@ -37,7 +37,7 @@ Then open the project in Godot (or run `godot --headless --path . --import`) to 
 |---|---|
 | `blender/kit.py` | Shared parts kit: limb tubes, chitin blades (plates, spikes, claws, mandibles), ellipsoids, orbs; rig, skinning, keyframe, export and preview-render helpers |
 | `blender/hexapod.py` | Shared six-legged walker: leg layout, leg meshes and bones, tripod walk gait, idle fidget |
-| `blender/build_props.py` | Set-dressing props after the concept mockups (AC unit, cabinets, switchgear, server rack, console, wall panel, door, tank, container, eggs, floor vent, planter, lockers...). One GLB each in `assets/models/props/`; `--only a,b` builds some, `--preview DIR` renders Cycles stills |
+| `blender/build_props.py` | Set-dressing props after the concept mockups (AC unit, cabinets, switchgear, server rack, console, wall panel, door, tank, container, eggs, floor vent, planter, lockers...), plus the starship set (ship pillar, hazard crate, hull window, supply pod) and the foundry set (crucible, smoke stack, furnace pillar, ingot stack). One GLB each in `assets/models/props/`; `--only a,b` builds some, `--preview DIR` renders Cycles stills |
 | `blender/build_swarmer.py` | Swarmer: shingled shell, amber eyes and glow seams. ~2.5k tris, 17 bones. Clips: idle, walk, attack |
 | `blender/build_burster.py` | Burster draft: lime sac with chitin veins under an armoured front shell; idle, walk, swell clips. **Not used in game**: the stand-in is kept until the model is redone (likely from an image-to-3D mesh). `burster.gd` already plays `swell` if a model provides it |
 

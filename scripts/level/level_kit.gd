@@ -12,6 +12,8 @@ var static_body: StaticBody3D
 var mats := {}
 var _mesh_cache := {}
 
+var _smoke_quad: QuadMesh
+var _smoke_pm: ParticleProcessMaterial
 var spawn_edges: Array[Dictionary] = []  # {a, b, inward, length, from_shaft}
 var blockers: Array[Vector3] = []  # x, z, radius
 ## Repeated static parts (rail posts, trusses, pipes...) are batched into one
@@ -534,10 +536,15 @@ func wall(a: Vector3, b: Vector3, height := 3.2, thickness := 0.6) -> void:
 ## Solid structure between the rooms of an interior section: a dark slab whose
 ## top sits at `height`, running down into the void like a building's mass,
 ## with roof vents and a lit trim so it doesn't read as a black hole.
-func structure_fill(r: Rect2, height: float) -> void:
+func structure_fill(r: Rect2, height: float, mat: Material = null, trim: Material = null) -> void:
 	var c := Vector3(r.get_center().x, 0.0, r.get_center().y)
 	var depth := 14.0
-	box(Vector3(r.size.x, depth, r.size.y), c + Vector3(0, height - depth * 0.5, 0), mats.machine_dark, false, 0.0, false)
+	box(Vector3(r.size.x, depth, r.size.y), c + Vector3(0, height - depth * 0.5, 0), mat if mat else mats.machine_dark, false, 0.0, false)
+	if trim:
+		# A lit seam round the slab's top edge (starship hull plating).
+		for side in [[Vector3(0, 0, -r.size.y * 0.5), Vector3(r.size.x, 0.06, 0.08)], [Vector3(0, 0, r.size.y * 0.5), Vector3(r.size.x, 0.06, 0.08)],
+				[Vector3(-r.size.x * 0.5, 0, 0), Vector3(0.08, 0.06, r.size.y)], [Vector3(r.size.x * 0.5, 0, 0), Vector3(0.08, 0.06, r.size.y)]]:
+			batch_box(side[1], c + side[0] + Vector3(0, height - 0.35, 0), trim, Basis(), false)
 	batch_box(Vector3(r.size.x + 0.06, 0.08, r.size.y + 0.06), c + Vector3(0, height + 0.04, 0), mats.beam)
 	# Roof clutter on the bigger slabs: vents and ducts.
 	if r.size.x > 3.0 and r.size.y > 3.0:
@@ -631,3 +638,218 @@ func void_dressing(bounds: Rect2, fog_top: float, fog_density: float, fog_albedo
 	fm.edge_fade = 0.02
 	fog.material = fm
 	root.add_child(fog)
+
+
+# ==========================================================================
+# Destinations: what lies under and around the floors
+# ==========================================================================
+
+## Open space under a derelict hauler: the ship's lower hull and engine
+## glow just below the decks, a gas giant far beneath, stars and nebula.
+func space_dressing(bounds: Rect2) -> void:
+	var c := bounds.get_center()
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 777
+	mats.hull = std(Color("2e333b"), 0.55, 0.45)
+	mats.hull_dark = std(Color("12151a"), 0.6, 0.5)
+	mats.hull_red = std(Color("200404"), 0.0, 0.5, Color("ff3a2e"), 5.0)
+	mats.engine = std(Color("0a1a20"), 0.0, 0.4, Color("5ff2e8"), 6.0)
+	# Stars far below, wide enough to fill every gap the camera can see through.
+	var stars := ShaderMaterial.new()
+	stars.shader = preload("res://scripts/shaders/starfield.gdshader")
+	plane(Vector2(bounds.size.x + 1400.0, bounds.size.y + 1400.0), Vector3(c.x, -320.0, c.y), stars)
+	# A gas giant hanging off one side.
+	var planet := ShaderMaterial.new()
+	planet.shader = preload("res://scripts/shaders/planet.gdshader")
+	var pm := MeshInstance3D.new()
+	var sm := SphereMesh.new()
+	sm.radius = 260.0
+	sm.height = 520.0
+	sm.radial_segments = 64
+	sm.rings = 32
+	pm.mesh = sm
+	pm.material_override = planet
+	pm.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	pm.position = Vector3(c.x - bounds.size.x * 0.3 - 120.0, -480.0, c.y + bounds.size.y * 0.2 + 60.0)
+	root.add_child(pm)
+	# The hauler's lower hull: long plated slabs and ribs under the play area,
+	# with red running lights and teal engine vents.
+	var hull_y := -18.0
+	var n := int(bounds.size.x / 22.0) + 2
+	for i in n:
+		var x := bounds.position.x - 10.0 + i * (bounds.size.x + 20.0) / maxf(n - 1, 1)
+		var w := rng.randf_range(10.0, 16.0)
+		var top := hull_y - rng.randf_range(0.0, 10.0)
+		box(Vector3(w, 6.0, bounds.size.y + 40.0), Vector3(x, top - 3.0, c.y), mats.hull, false, 0.0, false)
+		batch_box(Vector3(w * 0.7, 0.3, bounds.size.y + 30.0), Vector3(x, top + 0.15, c.y), mats.hull_dark, Basis(), false)
+		for k in int((bounds.size.y + 40.0) / 9.0):
+			var z := bounds.position.y - 20.0 + k * 9.0 + 4.0
+			batch_box(Vector3(w + 0.2, 0.25, 0.25), Vector3(x, top + 0.05, z), mats.hull_red if k % 3 == 0 else mats.hull_dark, Basis(), false)
+		if rng.randf() < 0.45:
+			var ez := c.y + rng.randf_range(-bounds.size.y * 0.4, bounds.size.y * 0.4)
+			var e := torus(1.6, 2.4, Vector3(x, top + 0.1, ez), mats.engine)
+			e.scale = Vector3(1.0, 0.4, 1.0)
+	# Ribs running across, catching the light between decks.
+	for k in int(bounds.size.y / 30.0) + 2:
+		var z := bounds.position.y - 10.0 + k * 30.0
+		box(Vector3(bounds.size.x + 40.0, 3.0, 2.2), Vector3(c.x, hull_y - 1.5, z), mats.hull_dark, false, 0.0, false)
+	# Drifting debris off the hull.
+	for i in 40:
+		var p := Vector3(c.x + rng.randf_range(-1.0, 1.0) * (bounds.size.x * 0.5 + 60.0), rng.randf_range(-90.0, -30.0),
+			c.y + rng.randf_range(-1.0, 1.0) * (bounds.size.y * 0.5 + 60.0))
+		var s := rng.randf_range(0.6, 3.5)
+		batch_box(Vector3(s, s * 0.4, s * 0.8), p, mats.hull, Basis.from_euler(Vector3(rng.randf() * TAU, rng.randf() * TAU, 0.0)), false)
+
+
+## The Furnace Chasm: a molten lake far below, iron towers rising out of it,
+## orange light from beneath, rising embers.
+func lava_dressing(bounds: Rect2, fog_top: float) -> void:
+	var c := bounds.get_center()
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 911
+	mats.molten_strip = std(Color("301005"), 0.0, 0.5, Color("ff7a1e"), 5.0)
+	mats.iron = std(Color("1f1a17"), 0.7, 0.55)
+	var lava := ShaderMaterial.new()
+	lava.shader = preload("res://scripts/shaders/lava.gdshader")
+	plane(Vector2(bounds.size.x + 900.0, bounds.size.y + 900.0), Vector3(c.x, -30.0, c.y), lava)
+	# Iron towers out of the lake, some carrying glowing slits.
+	for i in 18:
+		var ang := TAU * i / 18.0 + rng.randf_range(-0.15, 0.15)
+		var rx := bounds.size.x * 0.5 + rng.randf_range(10.0, 40.0)
+		var rz := bounds.size.y * 0.5 + rng.randf_range(10.0, 40.0)
+		var top := rng.randf_range(-12.0, 10.0) if sin(ang) < 0.0 else rng.randf_range(-18.0, -6.0)
+		var p := Vector3(c.x + cos(ang) * rx, top, c.y + sin(ang) * rz)
+		var w := rng.randf_range(4.0, 9.0)
+		box(Vector3(w, top + 31.0, w), Vector3(p.x, (top - 30.0) * 0.5, p.z), mats.iron, false, 0.0, false)
+		for k in 3:
+			batch_box(Vector3(w * 0.25, 1.6, 0.1), Vector3(p.x, top - 4.0 - k * 6.0, p.z + w * 0.5 + 0.05), mats.molten_strip, Basis(), false)
+	# Trusses dropping from the deck clusters into the glow.
+	var cells_x := int(ceil((bounds.size.x + 40.0) / 36.0))
+	var cells_z := int(ceil((bounds.size.y + 40.0) / 36.0))
+	for ix in cells_x:
+		for iz in cells_z:
+			if rng.randf() < 0.5:
+				var gp := Vector3(bounds.position.x - 20.0 + (ix + 0.5) * 36.0, -29.5, bounds.position.y - 20.0 + (iz + 0.5) * 36.0)
+				batch_box(Vector3(rng.randf_range(6.0, 12.0), 2.0, rng.randf_range(6.0, 12.0)), gp, mats.iron, Basis(Vector3.UP, rng.randf()), false)
+	# Uplight from the lake (hidden on LOW like every point light).
+	var lights := 0
+	for ix in range(0, cells_x, 2):
+		for iz in range(0, cells_z, 2):
+			var lp := Vector3(bounds.position.x + (ix + 0.5) * 36.0, -14.0, bounds.position.y + (iz + 0.5) * 36.0)
+			var l := omni(lp, Color("ff6a1c"), 2.5, 34.0, 1.5)
+			l.shadow_enabled = false
+			lights += 1
+	# Heat haze: orange fog over the lake (Forward+ only).
+	if RenderingServer.get_current_rendering_method() != "gl_compatibility":
+		var fog := FogVolume.new()
+		fog.name = "VoidFog"
+		fog.size = Vector3(bounds.size.x + 400.0, 40.0, bounds.size.y + 400.0)
+		fog.position = Vector3(c.x, -20.0, c.y)
+		var fm := FogMaterial.new()
+		fm.density = 0.035
+		fm.albedo = Color("ffb070")
+		fm.emission = Color("ff5a10")
+		fm.edge_fade = 0.1
+		fog.material = fm
+		root.add_child(fog)
+	embers(bounds)
+
+
+## Sparks and embers rising out of the chasm over the whole floor.
+func embers(bounds: Rect2) -> void:
+	var c := bounds.get_center()
+	var pm := ParticleProcessMaterial.new()
+	pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_BOX
+	pm.emission_box_extents = Vector3(bounds.size.x * 0.5 + 20.0, 4.0, bounds.size.y * 0.5 + 20.0)
+	pm.direction = Vector3(0, 1, 0)
+	pm.spread = 25.0
+	pm.initial_velocity_min = 2.0
+	pm.initial_velocity_max = 5.0
+	pm.gravity = Vector3(0.6, 0.4, 0.2)
+	pm.turbulence_enabled = true
+	pm.turbulence_noise_strength = 1.5
+	pm.scale_min = 0.5
+	pm.scale_max = 1.4
+	var fade := Gradient.new()
+	fade.set_color(0, Color(1.0, 0.75, 0.3, 1.0))
+	fade.set_color(1, Color(1.0, 0.3, 0.05, 0.0))
+	var ramp := GradientTexture1D.new()
+	ramp.gradient = fade
+	pm.color_ramp = ramp
+	var quad := QuadMesh.new()
+	quad.size = Vector2(0.09, 0.09)
+	var m := StandardMaterial3D.new()
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	m.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+	m.vertex_color_use_as_albedo = true
+	m.albedo_color = Color(2.5, 1.4, 0.6)
+	quad.material = m
+	var gp := GPUParticles3D.new()
+	gp.name = "Embers"
+	gp.amount = 900
+	gp.lifetime = 9.0
+	gp.preprocess = 9.0
+	gp.process_material = pm
+	gp.draw_pass_1 = quad
+	gp.position = Vector3(c.x, -16.0, c.y)
+	gp.visibility_aabb = AABB(Vector3(-bounds.size.x * 0.5 - 40.0, -10.0, -bounds.size.y * 0.5 - 40.0),
+		Vector3(bounds.size.x + 80.0, 70.0, bounds.size.y + 80.0))
+	gp.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	root.add_child(gp)
+
+
+## A plume of smoke lit orange from below, at a stack or crucible.
+func smoke(pos: Vector3) -> void:
+	if _smoke_quad == null:
+		var g := Gradient.new()
+		g.set_color(0, Color(1, 1, 1, 1))
+		g.set_color(1, Color(1, 1, 1, 0))
+		var tex := GradientTexture2D.new()
+		tex.gradient = g
+		tex.fill = GradientTexture2D.FILL_RADIAL
+		tex.fill_from = Vector2(0.5, 0.5)
+		tex.fill_to = Vector2(1.0, 0.5)
+		tex.width = 64
+		tex.height = 64
+		var m := StandardMaterial3D.new()
+		m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		m.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+		m.vertex_color_use_as_albedo = true
+		m.albedo_texture = tex
+		_smoke_quad = QuadMesh.new()
+		_smoke_quad.size = Vector2(1.6, 1.6)
+		_smoke_quad.material = m
+		_smoke_pm = ParticleProcessMaterial.new()
+		_smoke_pm.direction = Vector3(0, 1, 0)
+		_smoke_pm.spread = 12.0
+		_smoke_pm.initial_velocity_min = 1.2
+		_smoke_pm.initial_velocity_max = 2.0
+		_smoke_pm.gravity = Vector3(0.5, 0.3, 0.2)
+		_smoke_pm.scale_min = 0.6
+		_smoke_pm.scale_max = 1.0
+		var curve := Curve.new()
+		curve.add_point(Vector2(0, 0.5))
+		curve.add_point(Vector2(1, 2.4))
+		var ct := CurveTexture.new()
+		ct.curve = curve
+		_smoke_pm.scale_curve = ct
+		var fade := Gradient.new()
+		fade.set_color(0, Color(0.9, 0.45, 0.2, 0.0))
+		fade.add_point(0.15, Color(0.55, 0.32, 0.22, 0.55))
+		fade.set_color(fade.get_point_count() - 1, Color(0.18, 0.16, 0.16, 0.0))
+		var ramp := GradientTexture1D.new()
+		ramp.gradient = fade
+		_smoke_pm.color_ramp = ramp
+	var gp := GPUParticles3D.new()
+	gp.amount = 18
+	gp.lifetime = 4.0
+	gp.preprocess = 4.0
+	gp.process_material = _smoke_pm
+	gp.draw_pass_1 = _smoke_quad
+	gp.position = pos
+	gp.visibility_aabb = AABB(Vector3(-6, -1, -6), Vector3(12, 14, 12))
+	gp.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	root.add_child(gp)

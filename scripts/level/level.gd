@@ -72,6 +72,8 @@ var breakers: Array[Interactable] = []
 var rooms: Array = []
 var bridges: Array = []
 var generated := false
+## What lies under the floors: "abyss" (Deepworks), "space" (starship), "lava" (foundry).
+var biome := "abyss"
 var layout := {}
 var floor_name := "First Dive"
 var is_final_floor := true
@@ -119,10 +121,45 @@ var _next: Array = []  # [from][to] -> portal index (or -1)
 var _blockers: Array[Vector3] = []
 
 
+## Per-destination sky, fog, ambient and key light (deep space, furnace glow).
+const BIOME_ENV := {
+	"space": {"background_color": Color("02030a"), "ambient_color": Color("6a7aa0"), "ambient_energy": 0.24,
+		"fog_color": Color("140c22"), "fog_density": 0.0006, "fog_height": -80.0, "fog_height_density": 0.0,
+		"volumetric_albedo": Color("a890b8"), "volumetric_emission": Color("12081a"), "volumetric_density": 0.0005,
+		"glow_intensity": 1.15, "saturation": 1.25, "light_color": Color(0.85, 0.78, 1.0), "light_energy": 0.42},
+	"lava": {"background_color": Color("1a0703"), "ambient_color": Color("6e3a20"), "ambient_energy": 0.17,
+		"fog_color": Color("3a1408"), "fog_density": 0.0012, "fog_height": -12.0, "fog_height_density": 0.03,
+		"volumetric_albedo": Color("ffb070"), "volumetric_emission": Color("4a1604"), "volumetric_density": 0.0012,
+		"glow_intensity": 1.25, "saturation": 1.22, "light_color": Color(1.0, 0.72, 0.52), "light_energy": 0.3},
+}
+
+
+func _apply_biome_environment() -> void:
+	if not BIOME_ENV.has(biome):
+		return
+	var scene := get_tree().current_scene if get_tree() else null
+	if scene == null:
+		return
+	var cfg: Dictionary = BIOME_ENV[biome]
+	var env := scene.find_child("WorldEnvironment", true, false)
+	if env and "volumetric_enabled" in env:
+		for k in cfg:
+			if k in env:
+				env.set(k, cfg[k])
+		env.remove_meta("gfx_ambient")
+	for n in scene.find_children("*", "DirectionalLight3D", true, false):
+		var d := n as DirectionalLight3D
+		d.light_color = cfg.light_color
+		d.light_energy = cfg.light_energy
+		d.remove_meta("gfx_energy")
+	Graphics.apply()
+
+
 func _ready() -> void:
 	_rebuild()
 	if not Engine.is_editor_hint():
 		Game.level = self
+		_apply_biome_environment.call_deferred()
 
 
 ## Reveal the region at `p` and its neighbours on the minimap.
@@ -307,10 +344,11 @@ func _rebuild() -> void:
 	discovered.clear()
 	generated = not Engine.is_editor_hint() and Profile.dive_layout == "complex"
 	if generated:
-		layout = ComplexGen.new().generate(Profile.dive_seed, Profile.dive_floor, Profile.dive_floors, Profile.dive_depth)
+		layout = ComplexGen.new().generate(Profile.dive_seed, Profile.dive_floor, Profile.dive_floors, Profile.dive_depth, Profile.dive_destination)
 		rooms = layout.rooms
 		bridges = layout.bridges
 		floor_name = layout.name
+		biome = layout.get("biome", "abyss")
 		is_final_floor = layout.final
 		player_start = layout.player_start
 		lift_position = layout.arrival
@@ -322,6 +360,7 @@ func _rebuild() -> void:
 		rooms = ROOMS
 		bridges = BRIDGES
 		floor_name = "First Dive"
+		biome = "abyss"
 		is_final_floor = true
 
 	_kit = LevelKit.new(self)
@@ -342,7 +381,15 @@ func _rebuild() -> void:
 		_build_rooms()
 	_build_bridges()
 	_finish_spawn_edges()
-	_kit.void_dressing(bounds, void_fog_top, void_fog_density, void_fog_albedo, void_fog_emission)
+	match biome:
+		"space":
+			_kit.space_dressing(bounds)
+		"lava":
+			_kit.lava_dressing(bounds, void_fog_top)
+			for sp in layout.get("smoke", []):
+				_kit.smoke(sp)
+		_:
+			_kit.void_dressing(bounds, void_fog_top, void_fog_density, void_fog_albedo, void_fog_emission)
 	_kit.flush_batches()
 	_blockers.append_array(_kit.blockers)
 	if not Engine.is_editor_hint():
@@ -770,8 +817,15 @@ func _build_generated_rooms() -> void:
 		var b: Vector3 = lw[1]
 		_kit.wall(a, b, ComplexGen.FILL_HEIGHT, 0.4)
 		minimap_solids.append(Rect2(Vector2(a.x, a.z), Vector2(b.x - a.x, b.z - a.z)).grow(0.25).abs())
+	var fill_mat: Material = null
+	var fill_trim: Material = null
+	if biome == "space":
+		fill_mat = _kit.std(Color("2a2f36"), 0.55, 0.45)
+		fill_trim = _kit.mats.red_light
+	elif biome == "lava":
+		fill_mat = _kit.std(Color("1d1815"), 0.65, 0.6)
 	for f in layout.get("fills", []):
-		_kit.structure_fill(f, ComplexGen.FILL_HEIGHT)
+		_kit.structure_fill(f, ComplexGen.FILL_HEIGHT, fill_mat, fill_trim)
 		minimap_solids.append(f)
 	for pr in layout.props:
 		Props.place(_kit, pr.name, pr.pos, pr.yaw, pr.scale, pr.tint)

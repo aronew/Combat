@@ -27,6 +27,8 @@ var last_result := {}
 ## Dive layout: "complex" (generated multi-floor dive) or "classic" (the small test level).
 var dive_layout := "complex"
 var dive_seed := 0
+## Where the dive goes: "deepworks", "starship" or "foundry" (ComplexGen.DESTINATIONS).
+var dive_destination := "deepworks"
 var dive_floor := 0
 var dive_floors := 1
 ## True from start_dive until the dive is banked or lost (floor changes keep it going).
@@ -244,10 +246,12 @@ func buy_crate(kind: String) -> Dictionary:
 # Dives
 # --------------------------------------------------------------------------
 
-func start_dive(depth: int, layout := "") -> void:
+func start_dive(depth: int, layout := "", destination := "") -> void:
 	dive_depth = clampi(depth, 1, data.max_depth)
 	if layout != "":
 		dive_layout = layout
+	if destination != "":
+		dive_destination = destination
 	dive_seed = randi()
 	dive_floor = 0
 	dive_floors = ComplexGen.floor_count(dive_depth) if dive_layout == "complex" else 1

@@ -18,7 +18,7 @@ Walk up to a station and press **E** (Esc or E closes the panel):
 | Armory | Equipped gear and your stash. Compare any item against what you're wearing (DPS change or per-stat green/red), equip, unequip armour, scrap for salvage |
 | Fabricator | Spend salvage on sealed crates (Field / Armory / Elite) |
 | Augments | Spend perk points (one per level) on 12 permanent perks |
-| Contracts | Pick a depth (1–5, unlocked by extracting) and deploy, or try the small one-floor test level |
+| Contracts | Pick a destination (Deepworks, Derelict Hauler, Furnace Chasm) and a depth (1–5, unlocked by extracting) and deploy, or try the small one-floor test level |
 | Test range | Training dummies with a live DPS readout to try new gear |
 
 ### Gear
@@ -68,12 +68,29 @@ You drop into the Deepworks, a mining complex hanging over the abyss, to steal d
 reactor uplink on its bottom floor. Every dive generates a new complex: rooms joined by catwalks
 over the void, branching with dead ends and loops, so there's always somewhere to run.
 
+### Destinations
+
+Every contract picks where the dive goes. Each has its own floor themes, set pieces and what lies
+under the floors:
+
+| Destination | Setting | Under and around the floors | Set pieces |
+|---|---|---|---|
+| The Deepworks | Mining complex over the abyss | Misty void, giant columns, teal glow far below | Switchgear, servers, containers, tanks |
+| Derelict Hauler | A hive-infested starship in orbit; almost every room is inside the hull | The ship's lower hull with running lights and engine vents, debris, stars and nebula, a gas giant | Deck pillars with red bands, hull windows onto space, hazard crates, cargo pods |
+| Furnace Chasm | Foundry gantries | A molten lake (cooling crust over glowing seams), iron towers, orange uplight, rising embers | Crucibles and exhaust stacks trailing smoke, furnace pillars, ingot stacks |
+
+Floor themes: Deepworks (Upper Decks, Switchgear Halls, Pump Works, Hive Foundry, Reactor Core),
+Derelict Hauler (Cargo Spine, Crew Ring, Engineering Deck, Drive Core), Furnace Chasm (Slag Gantries,
+Crucible Halls, Smelter Works, Furnace Core). Sky, fog, ambient and key light change with the
+destination. Dev flag: `--dest=deepworks|starship|foundry`.
+
 Part of every floor is **interior**: one or two clusters of rooms that fill their cells and form a
 building, joined by walled corridors or opened straight into each other as long halls, with solid
 structure between them instead of the abyss. Walls are tall at the back (north, west) and low at
 the front (south, east) so the camera still sees in. No void edges there, so bugs burrow or drop in
 rather than leaping up. The theme sets how much is interior: about a third of Upper Decks, Pump
-Works and the Reactor Core, nearly half of the Hive Foundry, and most of the Switchgear Halls.
+Works and the Reactor Core, nearly half of the Hive Foundry, and most of the Switchgear Halls. On the
+Derelict Hauler everything but the docking platform and the drive core is inside.
 
 | Depth | Floors | Rooms (about) | Size vs. the old test level |
 |---|---|---|---|

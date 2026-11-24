@@ -31,6 +31,38 @@ const THEMES := [
 const FINAL_THEME := {"name": "Reactor Core", "lamp": Color("ffb35c"), "alt": Color("e8eef5"), "red_rails": true,
 	"kinds": {"plain": 3, "block": 3, "split": 2, "hole": 2}, "interior": 0.3}
 
+## Starship floors (a derelict hauler): almost everything is inside the hull.
+const SHIP_THEMES := [
+	{"name": "Cargo Spine", "lamp": Color("ff4a3d"), "alt": Color("ffb38a"), "red_rails": true,
+		"kinds": {"plain": 4, "block": 3, "split": 2, "hole": 0}, "interior": 1.0},
+	{"name": "Crew Ring", "lamp": Color("5ff2e8"), "alt": Color("ff5a4a"),
+		"kinds": {"plain": 4, "block": 2, "split": 3, "hole": 1}, "interior": 1.0},
+	{"name": "Engineering Deck", "lamp": Color("ff7a2e"), "alt": Color("5ff2e8"), "red_rails": true,
+		"kinds": {"plain": 2, "block": 4, "split": 2, "hole": 1}, "interior": 1.0},
+]
+const SHIP_FINAL := {"name": "Drive Core", "lamp": Color("ff3b3b"), "alt": Color("5ff2e8"), "red_rails": true,
+	"kinds": {"plain": 3, "block": 3, "split": 2, "hole": 0}, "interior": 1.0}
+
+## Foundry floors (the Furnace Chasm): gantries over a lake of molten metal.
+const FOUNDRY_THEMES := [
+	{"name": "Slag Gantries", "lamp": Color("ff9a3d"), "alt": Color("ffd27a"), "red_rails": true,
+		"kinds": {"plain": 5, "block": 1, "split": 1, "hole": 3}, "interior": 0.15},
+	{"name": "Crucible Halls", "lamp": Color("ffb050"), "alt": Color("ff6a2a"),
+		"kinds": {"plain": 2, "block": 3, "split": 2, "hole": 3}, "interior": 0.5},
+	{"name": "Smelter Works", "lamp": Color("ffc070"), "alt": Color("ff5030"), "red_rails": true,
+		"kinds": {"plain": 3, "block": 3, "split": 2, "hole": 2}, "interior": 0.3},
+]
+const FOUNDRY_FINAL := {"name": "Furnace Core", "lamp": Color("ff7a2e"), "alt": Color("ffd27a"), "red_rails": true,
+	"kinds": {"plain": 3, "block": 3, "split": 2, "hole": 2}, "interior": 0.25}
+
+## Where a dive goes. `biome` decides what lies under and around the floors
+## (Level/LevelKit build it): the misty abyss, open space, or molten metal.
+const DESTINATIONS := {
+	"deepworks": {"name": "The Deepworks", "biome": "abyss", "floor_tint": Color(0, 0, 0, 0)},
+	"starship": {"name": "Derelict Hauler", "biome": "space", "floor_tint": Color(0.27, 0.31, 0.34)},
+	"foundry": {"name": "Furnace Chasm", "biome": "lava", "floor_tint": Color(0.27, 0.22, 0.19)},
+}
+
 ## Interior sections: rooms fill most of their cell, gap to the cell edge (m).
 const INTERIOR_INSET := Vector2(2.0, 3.5)
 ## Chance that two linked interior rooms open straight into each other (one hall)
@@ -103,6 +135,8 @@ var _rooms: Array = []
 var _bridges: Array = []
 var _cells: Array[Vector2i] = []
 var _links: Array = []  # [i, j, on_main_path]
+var _dest := {}
+var _biome := "abyss"
 var _inside := {}  # room index -> true for rooms in an interior section
 var _merges: Array = []  # [i, j]: linked interior rooms opened into one hall
 var _occupied: Array[Vector3] = []  # x, z, radius: spots objects must keep clear of
@@ -119,16 +153,29 @@ static func room_count(depth: int, floor_idx: int) -> int:
 	return mini(10 + depth + floor_idx, 16)
 
 
-static func theme_for(seed_: int, floor_idx: int, floors: int) -> Dictionary:
+static func theme_for(seed_: int, floor_idx: int, floors: int, dest := "deepworks") -> Dictionary:
+	var themes: Array = THEMES
+	var final: Dictionary = FINAL_THEME
+	match dest:
+		"starship":
+			themes = SHIP_THEMES
+			final = SHIP_FINAL
+		"foundry":
+			themes = FOUNDRY_THEMES
+			final = FOUNDRY_FINAL
 	if floor_idx >= floors - 1:
-		return FINAL_THEME
-	return THEMES[posmod(seed_ + floor_idx, THEMES.size())]
+		return final
+	return themes[posmod(seed_ + floor_idx, themes.size())]
 
 
-func generate(seed_: int, floor_idx: int, floors: int, depth: int) -> Dictionary:
-	rng.seed = hash([seed_, floor_idx, depth])
+func generate(seed_: int, floor_idx: int, floors: int, depth: int, dest := "deepworks") -> Dictionary:
+	rng.seed = hash([seed_, floor_idx, depth, dest])
+	if not DESTINATIONS.has(dest):
+		dest = "deepworks"
+	_dest = DESTINATIONS[dest]
+	_biome = _dest.biome
 	var final := floor_idx >= floors - 1
-	var theme := theme_for(seed_, floor_idx, floors)
+	var theme := theme_for(seed_, floor_idx, floors, dest)
 	var n := room_count(depth, floor_idx)
 	var cols := 5 if n <= 12 else 6
 	var rows := 4 if n <= 12 else 5
@@ -152,6 +199,7 @@ func generate(seed_: int, floor_idx: int, floors: int, depth: int) -> Dictionary
 		"crates": [], "panels": [], "guides": [], "placements": [], "shaft_glows": [], "carcasses": [],
 		"props": [], "wall_lights": [], "guide_loops": [], "shaft_pipes": [],
 		"uplink": Vector3.INF, "cargo": Vector3.INF, "low_walls": [], "fills": [],
+		"biome": _biome, "destination": dest, "destination_name": _dest.name, "smoke": [],
 	}
 	var used_names := {}
 	for i in _cells.size():
@@ -388,7 +436,7 @@ func _make_room(i: int, kind: String, role: String, theme: Dictionary, used_name
 		"id": StringName("r%d" % i), "name": nm, "rect": rect, "role": role, "center3": Vector3(c.x, 0, c.y),
 		"lamp": theme.alt if rng.randf() < 0.3 else theme.lamp, "nests": 0, "side": {},
 		"kind": {"start": "plain", "cargo": "plain", "reactor": "hole"}.get(kind, kind), "tag": kind,
-		"purpose": purpose, "walls": [], "floor_tint": FLOOR_TINTS.get(purpose, Color(0, 0, 0, 0)),
+		"purpose": purpose, "walls": [], "floor_tint": FLOOR_TINTS.get(purpose, _dest.floor_tint),
 		"interior": inside, "cell_rect": Rect2(cc.x - CELL * 0.5, cc.y - CELL * 0.5, CELL, CELL),
 	}
 	match kind:
@@ -654,6 +702,7 @@ func _dress_room(i: int, floor_idx: int, final: bool) -> void:
 		_out.guides.append([c + Vector3(-3.5, 0, -4.0), c + Vector3(-3.5, 0, 4.0)])
 		_out.guides.append([c + Vector3(3.5, 0, -4.0), c + Vector3(3.5, 0, 4.0)])
 	_dress_purpose(r)
+	_dress_biome(r)
 	for k in rng.randi_range(0, 2):
 		var spot := _free_spot(r, 2.5, 0.0)
 		if not spot.is_empty():
@@ -741,6 +790,10 @@ func _dress_purpose(r: Dictionary) -> void:
 			_build_wall(r, side)
 	# Props along the open railing edges (AC units, cabinets, cases).
 	var edge_props: Array = ["ac_unit", "electrical_box", "hard_case"]
+	if _biome == "space":
+		edge_props = ["hazard_crate", "supply_pod", "electrical_box"]
+	elif _biome == "lava":
+		edge_props = ["smoke_stack", "ingot_stack", "electrical_box"]
 	if purpose == "hydroponics":
 		edge_props = ["planter"]
 	elif purpose == "reactor" or purpose == "landing" or purpose == "cargo_lift":
@@ -873,12 +926,13 @@ func _case_cluster(r: Dictionary) -> void:
 		return
 	var p: Vector2 = sp[0]
 	var yaw := rng.randf_range(-0.3, 0.3) + (0.0 if rng.randf() < 0.5 else PI * 0.5)
-	_prop("hard_case", p, yaw)
+	var case_name := "hazard_crate" if _biome == "space" else "hard_case"
+	_prop(case_name, p, yaw)
 	var off := Vector2(cos(-yaw), sin(-yaw)) * 1.25
 	for q in [p + off, p - off * 0.95 + Vector2(0.1, 0.8).rotated(-yaw)]:
 		var qq: Vector2 = q
 		if rng.randf() < 0.65 and _in_pieces_margin(r, qq, 2.4) and _is_clear(qq, 0.9):
-			_prop("hard_case", qq, yaw + rng.randf_range(-0.2, 0.2))
+			_prop(case_name, qq, yaw + rng.randf_range(-0.2, 0.2))
 	_occupy(p, 2.4)
 
 
@@ -952,6 +1006,57 @@ func _hazard_bridges(floor_idx: int) -> void:
 		count += 1
 
 
+
+
+# ==========================================================================
+# Destination dressing
+# ==========================================================================
+
+## Set pieces that make each destination read at a glance: deck pillars and
+## cargo on the starship, crucibles, furnace towers and smoke on the foundry.
+func _dress_biome(r: Dictionary) -> void:
+	var rect: Rect2 = r.rect
+	var big := rect.size.x >= 20.0 and rect.size.y >= 18.0
+	match _biome:
+		"space":
+			if big and r.tag != "start":
+				# Two or four pillars holding up the deck above (Teal Ring mockup).
+				var inset := Vector2(minf(6.5, rect.size.x * 0.28), minf(6.0, rect.size.y * 0.28))
+				for corner in [rect.position + inset, Vector2(rect.end.x - inset.x, rect.position.y + inset.y),
+						Vector2(rect.position.x + inset.x, rect.end.y - inset.y), rect.end - inset]:
+					var cp: Vector2 = corner
+					if _in_pieces_margin(r, cp, 1.5) and _is_clear(cp, 2.2):
+						_prop("ship_pillar", cp, 0.0)
+						_occupy(cp, 2.0)
+			for k in rng.randi_range(0, 2):
+				var sp := _free_spot(r, 3.0, 2.0)
+				if not sp.is_empty():
+					_prop("supply_pod", sp[0], rng.randf() * TAU)
+					_occupy(sp[0], 1.8)
+		"lava":
+			if big and r.tag != "start" and rng.randf() < 0.7:
+				var sp := _free_spot(r, 4.5, 3.0)
+				if not sp.is_empty():
+					_prop("crucible", sp[0], rng.randf() * TAU)
+					_occupy(sp[0], 2.8)
+					_out.smoke.append(Vector3(sp[0].x, 2.4, sp[0].y))
+			if big:
+				for k in 2:
+					var sp := _free_spot(r, 2.5, 2.0)
+					if not sp.is_empty():
+						_prop("furnace_pillar", sp[0], rng.randf() * TAU)
+						_occupy(sp[0], 1.8)
+			for k in rng.randi_range(0, 2):
+				var sp := _free_spot(r, 2.2, 1.4)
+				if not sp.is_empty():
+					_prop("ingot_stack", sp[0], rng.randf() * TAU)
+					_occupy(sp[0], 1.2)
+	# Smoke rises from every exhaust stack placed in this room.
+	if _biome == "lava":
+		for pr in _out.props:
+			if pr.name == "smoke_stack" and rect.grow(1.0).has_point(Vector2(pr.pos.x, pr.pos.z)) and not pr.has("smoking"):
+				pr.smoking = true
+				_out.smoke.append(pr.pos + Vector3(0, 1.75, 0))
 
 # ==========================================================================
 # Interior sections
@@ -1159,7 +1264,8 @@ func _build_interior_walls(r: Dictionary) -> void:
 				var n := maxi(1, roundi(seg_len / 3.0))
 				var seg := seg_len / n
 				for k in n:
-					_prop("wall_panel", p0 + dir * (k + 0.5) * seg + inward * 0.25, _face(inward), Vector3(seg / 3.0, 1, 1))
+					var panel := "hull_window" if _biome == "space" and k % 2 == 1 else "wall_panel"
+					_prop(panel, p0 + dir * (k + 0.5) * seg + inward * 0.25, _face(inward), Vector3(seg / 3.0, 1, 1))
 				var lights := maxi(1, roundi(seg_len / 10.0))
 				for k in lights:
 					var lp := p0 + dir * (k + 0.5) * (seg_len / lights) + inward * 0.9
