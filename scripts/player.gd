@@ -41,8 +41,12 @@ enum Weapon { RIFLE, BLADE }
 @export var dash_ghost_interval := 0.025
 
 @export_group("Health")
-@export var max_health := 100.0
-@export var hurt_invincibility := 0.7
+@export var max_health := 140.0
+@export var hurt_invincibility := 0.9
+## Out-of-combat recovery: after this many seconds without taking damage,
+## slowly heal (stacks with regen from gear and perks).
+@export var recover_delay := 6.0
+@export var recover_rate := 4.0
 @export var hurt_knockback := 9.0
 
 @onready var visual: Node3D = $Visual
@@ -570,8 +574,11 @@ func _tick_buffs(delta: float) -> void:
 		_adrenal_t -= delta
 		if _adrenal_t <= 0.0:
 			_adrenal_stacks = 0
-	if _regen > 0.0 and _since_hurt > 4.0 and health < max_health:
-		health = minf(health + _regen * delta, max_health)
+	var rate := _regen if _since_hurt > 4.0 else 0.0
+	if _since_hurt > recover_delay:
+		rate += recover_rate
+	if rate > 0.0 and alive and health < max_health:
+		health = minf(health + rate * delta, max_health)
 		_regen_emit_t -= delta
 		if _regen_emit_t <= 0.0:
 			_regen_emit_t = 0.25
@@ -690,6 +697,15 @@ func is_invincible() -> bool:
 
 
 ## Returns true if the hit landed.
+func heal(amount: float) -> void:
+	if not alive or amount <= 0.0:
+		return
+	health = minf(health + amount, max_health)
+	Game.player_health_changed.emit(health, max_health)
+	if Game.fx:
+		Game.fx.text_popup(global_position + Vector3.UP * 2.2, "+%d" % roundi(amount), Color("3dff7a"), 0.9)
+
+
 func take_damage(amount: float, from_position: Vector3) -> bool:
 	if is_invincible():
 		return false

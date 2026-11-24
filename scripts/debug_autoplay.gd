@@ -56,6 +56,13 @@ func _ready() -> void:
 		elif arg.begins_with("--depth="):
 			Profile.data.max_depth = Profile.MAX_DEPTH
 			Profile.dive_depth = clampi(arg.get_slice("=", 1).to_int(), 1, Profile.MAX_DEPTH)
+		elif arg == "--fresh":
+			# A brand-new character: starter rifle + blade, level 1, no perks. Never saved.
+			Profile.persist = false
+			Profile.data.level = 1
+			Profile.data.perks = {}
+			Profile.data.equipped = {"gun": Loot.starter_gun(), "blade": Loot.starter_blade()}
+			Profile._touch()
 		elif arg == "--loot-demo":
 			_loot_demo = true
 		elif arg.begins_with("--gear="):
@@ -125,12 +132,13 @@ func _process(delta: float) -> void:
 		_report_t = 0.0
 		var sp := Game.spawner
 		var m := Game.mission
-		print("[autoplay] t=%.1f fps=%d process=%.2fms physics=%.2fms phase=%s alert=%d room=%s alive=%d kills=%d haul=%d hp=%d upload=%d%%" % [
+		print("[autoplay] t=%.1f fps=%d process=%.2fms physics=%.2fms phase=%s alert=%d room=%s pos=%s alive=%d kills=%d haul=%d hp=%d upload=%d%%" % [
 			_t, Engine.get_frames_per_second(),
 			Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0,
 			Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0,
 			PHASES[m.phase] if m else "-", roundi(Game.director.alert) if Game.director else 0,
 			Game.level.room_of(Game.player.global_position) if Game.level and Game.player else "-",
+			Game.player.global_position.snapped(Vector3.ONE * 0.1) if Game.player else Vector3.ZERO,
 			sp.active.size() if sp else 0, Game.kills, m.haul if m else 0,
 			roundi(Game.player.health) if Game.player else 0, roundi(m.upload * 100.0) if m else 0])
 		_report_stalls(sp)
@@ -182,7 +190,7 @@ func _drive(delta: float) -> void:
 		if pos.distance_to(lvl.uplink_position) < 2.4:
 			p.auto_interact = true
 	elif m.phase == Mission.Phase.UPLOAD:
-		_orbit += delta * 0.6
+		_orbit += delta * 1.5
 		goal = lvl.uplink_position + Vector3(cos(_orbit) * 3.5, 0, 2.5 + sin(_orbit) * 1.5)
 	var nav := lvl.get_nav_target(pos, goal)
 	var to := nav - pos

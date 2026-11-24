@@ -73,6 +73,10 @@ You drop into a mining megastructure over the abyss to steal data from the react
    nests. A **purple elite** arrives halfway through.
 3. **Extract.** Fight back to the lift you dropped in on and hold the pad until it arrives.
 
+**Health:** green orbs drop from kills (more often from tougher bugs, three from elites, two from
+nests) and drift toward you only while you're hurt. You also recover slowly after about 6 s
+without taking damage.
+
 **Salvage** drops from kills, nests and the uplink. It's **banked only if you extract**; die and
 you lose everything you were carrying. Higher alert means more enemies but bigger drops.
 
@@ -87,7 +91,7 @@ you lose everything you were carrying. Higher alert means more enemies but bigge
 ### Enemies
 | Enemy | How to deal with it |
 |---|---|
-| Swarmer | Fodder that swarms your position |
+| Swarmer | Fodder that swarms your position. Every biter swells and rears up before it lunges, so keep moving (a blade hit interrupts the bite) |
 | Burster | Explodes near you, and when killed. The blast hurts other bugs too, so pop it inside a crowd |
 | Shield Bug | Frontal shield blocks bullets and blade. It turns slowly, so roll behind it (back hits do x1.5) |
 | Sentry Turret | Wakes when it sees or hears you. Red aim line, then a beam that also cuts through bugs. Roll out, use cover, or **parry it with the blade** to reflect it |
@@ -172,7 +176,7 @@ godot --path . res://scenes/dive.tscn -- --autoplay --god
 
 Flags: `--god`, `--stealth` (uses the blade on sleepers), `--skip-to=uplink`, `--depth=N`,
 `--gear=legendary|epic|random` (or `legendary:overclock`, `epic:shock` to force one effect;
-test gear is never saved), `--loot-demo`, `--shots=DIR`, `--shot-times=a,b,c`,
+test gear is never saved), `--fresh` (a brand-new level 1 character with starter gear, not saved), `--loot-demo`, `--shots=DIR`, `--shot-times=a,b,c`,
 `--quit-after=SECONDS`, `--test-restart`. Every 2 s it prints FPS, frame times, phase, alert,
 room and swarm stats, and it flags any bug that stops making progress.
 
