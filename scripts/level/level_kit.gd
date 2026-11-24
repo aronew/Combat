@@ -531,6 +531,28 @@ func wall(a: Vector3, b: Vector3, height := 3.2, thickness := 0.6) -> void:
 		add_blocker(p.x, p.z, 0.7)
 
 
+## Solid structure between the rooms of an interior section: a dark slab whose
+## top sits at `height`, running down into the void like a building's mass,
+## with roof vents and a lit trim so it doesn't read as a black hole.
+func structure_fill(r: Rect2, height: float) -> void:
+	var c := Vector3(r.get_center().x, 0.0, r.get_center().y)
+	var depth := 14.0
+	box(Vector3(r.size.x, depth, r.size.y), c + Vector3(0, height - depth * 0.5, 0), mats.machine_dark, false, 0.0, false)
+	batch_box(Vector3(r.size.x + 0.06, 0.08, r.size.y + 0.06), c + Vector3(0, height + 0.04, 0), mats.beam)
+	# Roof clutter on the bigger slabs: vents and ducts.
+	if r.size.x > 3.0 and r.size.y > 3.0:
+		var n := mini(int(r.get_area() / 30.0) + 1, 4)
+		for i in n:
+			var t := (i + 0.5) / n
+			var p := Vector3(lerpf(r.position.x + 1.2, r.end.x - 1.2, t), height, lerpf(r.end.y - 1.2, r.position.y + 1.2, t))
+			batch_box(Vector3(1.1, 0.35, 0.9), p + Vector3(0, 0.17, 0), mats.machine, Basis(), false)
+	elif r.size.x > 6.0 or r.size.y > 6.0:
+		var along_x := r.size.x > r.size.y
+		var a := Vector3(r.position.x + 0.5, height + 0.18, c.z) if along_x else Vector3(c.x, height + 0.18, r.position.y + 0.5)
+		var b := Vector3(r.end.x - 0.5, height + 0.18, c.z) if along_x else Vector3(c.x, height + 0.18, r.end.y - 0.5)
+		batch_pipe(a, b, 0.16, mats.pipe)
+
+
 ## Row of switchgear cabinets filling a rect (Cobalt Switchgear Gallery concept).
 func machinery_block(r: Rect2, height := 2.4) -> void:
 	var c := Vector3(r.get_center().x, 0.0, r.get_center().y)

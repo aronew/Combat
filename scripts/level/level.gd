@@ -580,12 +580,31 @@ func _build_bridges() -> void:
 					along_x = e.axis == &"x"
 					break
 		_kit.bridge(r, along_x, b.get("solid", false))
+		if b.get("walled", false):
+			_corridor_walls(r, along_x)
+			continue
 		if along_x:
 			_kit.rail_run(Vector3(r.position.x, 0, r.position.y), Vector3(r.end.x, 0, r.position.y), Vector3.BACK, lamp_c, i % 2 == 0)
 			_kit.rail_run(Vector3(r.position.x, 0, r.end.y), Vector3(r.end.x, 0, r.end.y), Vector3.FORWARD, lamp_c, i % 2 == 1)
 		else:
 			_kit.rail_run(Vector3(r.position.x, 0, r.position.y), Vector3(r.position.x, 0, r.end.y), Vector3.RIGHT, lamp_c, i % 2 == 0)
 			_kit.rail_run(Vector3(r.end.x, 0, r.position.y), Vector3(r.end.x, 0, r.end.y), Vector3.LEFT, lamp_c, i % 2 == 1)
+
+
+## A walled corridor inside an interior section: a tall wall on the far side
+## (north or west), a low one on the camera side, no railings and no void.
+func _corridor_walls(r: Rect2, along_x: bool) -> void:
+	var t := 0.4
+	if along_x:
+		_kit.wall(Vector3(r.position.x, 0, r.position.y - t * 0.5), Vector3(r.end.x, 0, r.position.y - t * 0.5), 3.2, t)
+		_kit.wall(Vector3(r.position.x, 0, r.end.y + t * 0.5), Vector3(r.end.x, 0, r.end.y + t * 0.5), ComplexGen.FILL_HEIGHT, t)
+		minimap_solids.append(Rect2(r.position.x, r.position.y - t, r.size.x, t))
+		minimap_solids.append(Rect2(r.position.x, r.end.y, r.size.x, t))
+	else:
+		_kit.wall(Vector3(r.position.x - t * 0.5, 0, r.position.y), Vector3(r.position.x - t * 0.5, 0, r.end.y), 3.2, t)
+		_kit.wall(Vector3(r.end.x + t * 0.5, 0, r.position.y), Vector3(r.end.x + t * 0.5, 0, r.end.y), ComplexGen.FILL_HEIGHT, t)
+		minimap_solids.append(Rect2(r.position.x - t, r.position.y, t, r.size.y))
+		minimap_solids.append(Rect2(r.end.x, r.position.y, t, r.size.y))
 
 
 func _hole_rails(h: Rect2, color := Color("ffae45")) -> void:
@@ -683,8 +702,14 @@ func _build_generated_rooms() -> void:
 		var lamp_c: Color = room.lamp
 		var tint: Color = room.get("floor_tint", Color(0, 0, 0, 0))
 		var fm: Material = _kit.floor_variant(tint) if tint.a > 0.0 else null
+		var interior: bool = room.get("interior", false)
 		# Walled sides get no railing (the wall props stand there instead).
 		var openings := _openings_for(r)
+		if interior:
+			for side in ["n", "s", "w", "e"]:
+				var full_lo2 := r.position.x if side == "n" or side == "s" else r.position.y
+				var full_hi2 := r.end.x if side == "n" or side == "s" else r.end.y
+				openings.append({"side": StringName(side), "lo": full_lo2, "hi": full_hi2})
 		for side in room.get("walls", []):
 			var full_lo := r.position.x if side == "n" or side == "s" else r.position.y
 			var full_hi := r.end.x if side == "n" or side == "s" else r.end.y
@@ -733,9 +758,21 @@ func _build_generated_rooms() -> void:
 				_kit.deck(r, fm)
 				_kit.rails_around(r, openings, lamp_c)
 		for side in room.get("walls", []):
+			if interior:
+				continue  # drawn from the wall segments below
 			var a := Vector3(r.position.x, 0, r.position.y)
 			var b := Vector3(r.end.x, 0, r.position.y) if side == "n" else Vector3(r.position.x, 0, r.end.y)
 			minimap_solids.append(Rect2(Vector2(a.x, a.z), Vector2(b.x - a.x, b.z - a.z)).grow(0.25).abs())
+	# Interior sections: low walls on the camera side and the solid structure
+	# that fills the gaps between rooms.
+	for lw in layout.get("low_walls", []):
+		var a: Vector3 = lw[0]
+		var b: Vector3 = lw[1]
+		_kit.wall(a, b, ComplexGen.FILL_HEIGHT, 0.4)
+		minimap_solids.append(Rect2(Vector2(a.x, a.z), Vector2(b.x - a.x, b.z - a.z)).grow(0.25).abs())
+	for f in layout.get("fills", []):
+		_kit.structure_fill(f, ComplexGen.FILL_HEIGHT)
+		minimap_solids.append(f)
 	for pr in layout.props:
 		Props.place(_kit, pr.name, pr.pos, pr.yaw, pr.scale, pr.tint)
 	for wl in layout.wall_lights:

@@ -68,11 +68,18 @@ You drop into the Deepworks, a mining complex hanging over the abyss, to steal d
 reactor uplink on its bottom floor. Every dive generates a new complex: rooms joined by catwalks
 over the void, branching with dead ends and loops, so there's always somewhere to run.
 
+Part of every floor is **interior**: one or two clusters of rooms that fill their cells and form a
+building, joined by walled corridors or opened straight into each other as long halls, with solid
+structure between them instead of the abyss. Walls are tall at the back (north, west) and low at
+the front (south, east) so the camera still sees in. No void edges there, so bugs burrow or drop in
+rather than leaping up. The theme sets how much is interior: about a third of Upper Decks, Pump
+Works and the Reactor Core, nearly half of the Hive Foundry, and most of the Switchgear Halls.
+
 | Depth | Floors | Rooms (about) | Size vs. the old test level |
 |---|---|---|---|
-| 1 | 2 | 23 | ~5x |
-| 3 | 3 | 42 | ~10x |
-| 5 | 4 | 63 | ~15x |
+| 1 | 2 | 23 | ~7x |
+| 3 | 3 | 42 | ~14x |
+| 5 | 4 | 63 | ~21x |
 
 Each floor has a theme (Upper Decks, Switchgear Halls, Pump Works, Hive Foundry, and the
 Reactor Core at the bottom), and every room has a purpose that decides its name, props, floor
