@@ -9,7 +9,7 @@ extends Enemy
 @export var fuse_time := 0.55
 @export var blast_radius := 3.4
 @export var blast_enemy_damage := 75.0
-@export var blast_player_damage := 26.0
+@export var blast_player_damage := 20.0
 @export var blast_knockback := 13.0
 
 var _fuse := -1.0

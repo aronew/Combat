@@ -28,14 +28,14 @@ const LEVEL_NAMES := ["DORMANT", "STIRRING", "HUNTING", "ALARM"]
 @export var scream_alert := 5.0
 
 @export_group("Hunting packs")
-@export var hunt_interval := Vector2(7.0, 11.0)
-@export var hunt_pack_size := Vector2i(3, 5)
+@export var hunt_interval := Vector2(10.0, 14.0)
+@export var hunt_pack_size := Vector2i(2, 4)
 
 @export_group("Alarm waves")
-@export var alarm_base_rate := 1.3  ## Bugs per second.
-@export var alarm_rate_from_alert := 1.4  ## Extra bugs/s if you started the uplink at max alert.
-@export var alarm_ramp := 0.015  ## Extra bugs/s per second of alarm.
-@export var extract_rate := 0.9
+@export var alarm_base_rate := 0.85  ## Bugs per second.
+@export var alarm_rate_from_alert := 1.0  ## Extra bugs/s if you started the uplink at max alert.
+@export var alarm_ramp := 0.01  ## Extra bugs/s per second of alarm.
+@export var extract_rate := 0.6
 @export var burster_chance := 0.12
 @export var shield_chance := 0.07
 @export var blue_chance := 0.05
@@ -161,11 +161,11 @@ func _physics_process(delta: float) -> void:
 			Game.alert_changed.emit(level, alert)
 		&"alarm":
 			_alarm_t += delta
-			var rate := alarm_base_rate + alarm_rate_from_alert * _alarm_intensity + alarm_ramp * _alarm_t
+			var rate := (alarm_base_rate + alarm_rate_from_alert * _alarm_intensity + alarm_ramp * _alarm_t) * _depth_scale()
 			_budget += rate * delta
 			_drain_budget(max_alive_alarm)
 		&"extract":
-			_budget += extract_rate * delta
+			_budget += extract_rate * _depth_scale() * delta
 			_drain_budget(100)
 
 
@@ -183,11 +183,16 @@ func _drain_budget(cap: int) -> void:
 			type = &"burster"
 		var tr := randf()
 		var tier := Enemy.Tier.NORMAL
-		if tr < gold_chance:
+		var tier_scale := 1.0 + 0.5 * (Profile.dive_depth - 1)
+		if tr < gold_chance * tier_scale:
 			tier = Enemy.Tier.GOLD
-		elif tr < gold_chance + blue_chance:
+		elif tr < (gold_chance + blue_chance) * tier_scale:
 			tier = Enemy.Tier.BLUE
 		_spawn_unit(type, tier, &"")
+
+
+func _depth_scale() -> float:
+	return 1.0 + 0.15 * (Profile.dive_depth - 1)
 
 
 ## Pick an entrance near the player: leap from the void, burrow, drop in, or crawl out of a nest.

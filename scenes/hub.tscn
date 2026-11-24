@@ -1,0 +1,47 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scripts/main.gd" id="1_main"]
+[ext_resource type="Script" path="res://scripts/environment_controller.gd" id="2_env"]
+[ext_resource type="Script" path="res://scripts/hub/hub_level.gd" id="3_hub"]
+[ext_resource type="PackedScene" path="res://scenes/player.tscn" id="4_player"]
+[ext_resource type="PackedScene" path="res://scenes/camera_rig.tscn" id="5_cam"]
+[ext_resource type="Script" path="res://scripts/projectile_pool.gd" id="7_pool"]
+[ext_resource type="Script" path="res://scripts/fx.gd" id="8_fx"]
+[ext_resource type="Script" path="res://scripts/ui/hub_ui.gd" id="9_ui"]
+
+[sub_resource type="Environment" id="Env_hub"]
+background_mode = 1
+
+[node name="Main" type="Node3D"]
+script = ExtResource("1_main")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Env_hub")
+script = ExtResource("2_env")
+
+[node name="Moonlight" type="DirectionalLight3D" parent="."]
+rotation_degrees = Vector3(-58, -150, 0)
+light_color = Color(0.72, 0.9, 1, 1)
+light_energy = 0.55
+light_volumetric_fog_energy = 0.4
+shadow_enabled = true
+shadow_opacity = 0.8
+directional_shadow_max_distance = 70.0
+
+[node name="HubLevel" type="Node3D" parent="."]
+script = ExtResource("3_hub")
+
+[node name="Player" parent="." instance=ExtResource("4_player")]
+position = Vector3(2, 0, 4)
+
+[node name="CameraRig" parent="." instance=ExtResource("5_cam")]
+target_path = NodePath("../Player")
+
+[node name="Projectiles" type="Node3D" parent="."]
+script = ExtResource("7_pool")
+
+[node name="FX" type="Node3D" parent="."]
+script = ExtResource("8_fx")
+
+[node name="HubUI" type="CanvasLayer" parent="."]
+script = ExtResource("9_ui")

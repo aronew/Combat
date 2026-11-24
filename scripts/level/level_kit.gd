@@ -394,6 +394,9 @@ func void_dressing(bounds: Rect2, fog_top: float, fog_density: float, fog_albedo
 		box(Vector3(3.0, 0.06, 0.06), cage + Vector3(0, 1.0, 1.47), mats.rail_dark, false, 0.0, false)
 		box(Vector3(0.4, 0.12, 0.05), cage + Vector3(0, 1.4, 1.5), mats.teal_strip, false, 0.0, false)
 
+	# Fog volumes need Forward+; the Compatibility renderer can't draw them.
+	if RenderingServer.get_current_rendering_method() == "gl_compatibility":
+		return
 	var fog := FogVolume.new()
 	fog.name = "VoidFog"
 	fog.size = Vector3(bounds.size.x + 400.0, 160.0, bounds.size.y + 400.0)

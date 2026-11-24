@@ -69,6 +69,11 @@ var nests: Array[HiveNest] = []
 var turret_spots: Array[Dictionary] = []
 
 var _kit: LevelKit
+
+
+## The deck material (Graphics swaps its shader for a cheaper one on LOW).
+func floor_material() -> ShaderMaterial:
+	return _kit.mats.get("floor") if _kit else null
 var _adj: Array = []  # region -> Array of portal indices
 var _next: Array = []  # [from][to] -> portal index (or -1)
 var _blockers: Array[Vector3] = []
@@ -127,9 +132,13 @@ func get_nav_target(from: Vector3, to: Vector3) -> Vector3:
 	var side := rel.dot(lat)
 	var limit := maxf(p.half - 0.6, 0.0)
 	var entry := c + lat * clampf(side, -limit, limit)
-	if along > -1.6 and absf(side) < p.half - 0.45:
+	var approach := entry - n * 1.0
+	# Cross when lined up with the doorway, or when already standing at the
+	# approach point (otherwise an agent can idle there just outside tolerance).
+	var at_approach := Vector2(from.x - approach.x, from.z - approach.z).length() < 0.9
+	if (along > -1.6 and absf(side) < p.half - 0.45) or at_approach:
 		return entry + n * 1.4
-	return entry - n * 1.0
+	return approach
 
 
 func is_walkable(p: Vector3) -> bool:
