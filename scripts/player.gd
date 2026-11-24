@@ -219,7 +219,7 @@ func _physics_process(delta: float) -> void:
 
 	var input := _read_move_input()
 	var wish := Vector3(input.x, 0.0, input.y)
-	if Game.camera_rig:
+	if Game.camera_rig and not autopilot:  # the bot steers in world space
 		wish = Game.camera_rig.get_flat_basis() * wish
 
 	if _wants_dash() and _dash_cd <= 0.0 and _dash_t <= 0.0:

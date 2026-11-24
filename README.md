@@ -75,8 +75,18 @@ over the void, branching with dead ends and loops, so there's always somewhere t
 | 5 | 4 | 63 | ~15x |
 
 Each floor has a theme (Upper Decks, Switchgear Halls, Pump Works, Hive Foundry, and the
-Reactor Core at the bottom) and a mix of room types: open decks, halls built around switchgear
-blocks, pressure locks split by a bulkhead with a blast door, and rings around open shafts.
+Reactor Core at the bottom), and every room has a purpose that decides its name, props, floor
+tint and walls: loading bays (hard cases, cable spools), hydroponics (planters), crew quarters
+(lockers), control rooms (consoles), junctions, switchgear halls and server galleries (rows of
+cabinets or racks), container yards, pump shafts (tanks, pipes over the shaft), pressure locks
+(panelled bulkhead with a blast door) and the reactor ring. Far sides of rooms often get solid
+walls with light strips and doors; open sides keep railings with tall lamp posts. Decks sit on
+steel trusses over a glowing abyss.
+
+**The hive is alive.** Unaware bugs don't stand around: packs feed on carcasses, some lie
+burrowed under hive mounds and burst out when you get close (or make a racket), others mill
+about, tend their nests, or roam between rooms. Sleepers breathe and twitch. Burrowed and
+feeding bugs can be silently killed from any side; wanderers only from behind.
 
 1. **Infiltrate, floor by floor.** The cargo lifts are dead: find and throw the **breakers**
    (yellow squares on the map; 1 on the first floor, 2 below) to power the floor's cargo lift,
@@ -148,6 +158,9 @@ nests (destroy them to cut off spawns).
 | Swap rifle / blade | Q or mouse wheel | Y |
 | Interact | E | X |
 | Map (whole floor) | M | Back |
+
+The camera looks down at 45° (walkways run corner to corner). Movement is relative to the
+screen: W is up-screen. The map is rotated to match.
 | After the dive: back to the Rig / dive again | E / R | X / Back |
 | Close a Rig panel | Esc or E | |
 | Fullscreen | F11 | |
@@ -172,8 +185,9 @@ godot --path . --rendering-method gl_compatibility
 scenes/          hub (the Rig, main scene), dive (the mission), level, player, camera_rig, spawner, projectile, FX scenes,
   enemies/       swarmer, burster, shield_bug, sentry_turret
 scripts/
-  level/         level.gd (builds a floor, region-graph nav, spawn queries), complex_gen.gd (generated floors),
-                 level_kit.gd (greybox builders)
+  level/         level.gd (builds a floor, region-graph nav, spawn queries), complex_gen.gd (generated floors,
+                 room purposes), level_kit.gd (deck/rail/truss builders, batched into MultiMeshes),
+                 props.gd (prop catalogue: footprints, collision)
   enemies/       enemy.gd (base: stealth states, senses, entrances, tiers) + special types
   objects/       interactable, explosive_barrel, hive_nest, laser_grid, blast_door, extraction_lift, training_dummy
   items/         loot.gd (item tables, generation, tooltips), player_stats.gd, perks.gd, loot_drop.gd
@@ -186,6 +200,8 @@ tests/           test_loot.gd (items/stats/save), test_hub.gd (stations, every w
 ui/              hud.tscn
 assets/          models (.glb from art_src/) and shared materials
 art_src/         Blender Python scripts that build the models
+assets/models/   enemies/ (rigged bugs) and props/ (set dressing), exported from art_src/blender
+art_src/blender/ Blender Python scripts that build the models (see art_src/README.md)
 reference/       concept art (ignored by the importer via .gdignore)
 ```
 
@@ -205,7 +221,10 @@ reference/       concept art (ignored by the importer via .gdignore)
 | WorldEnvironment / CameraRig | fog, glow, grading / framing, follow, shake |
 
 Generated floors: `scripts/level/complex_gen.gd` (floors and rooms per depth, themes, room
-sizes, how many nests/turrets/laser fences, population density). The hand-built test level's
+sizes and purposes, which props go where, wall chances, how many nests/turrets/laser fences,
+population density and idle activities). Props are modelled in
+`art_src/blender/build_props.py`; rebuild with `python art_src/blender/build_props.py`
+(bpy 5.x) and reimport. The hand-built test level's
 layout is data at the top of `scripts/level/level.gd`.
 
 ## Dev helper

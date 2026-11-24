@@ -9,7 +9,7 @@ extends WorldEnvironment
 	set(v): background_color = v; _apply()
 @export var ambient_color := Color("4a5a69"):
 	set(v): ambient_color = v; _apply()
-@export_range(0.0, 2.0) var ambient_energy := 0.22:
+@export_range(0.0, 2.0) var ambient_energy := 0.13:
 	set(v): ambient_energy = v; _apply()
 
 @export_group("Depth fog")
@@ -28,7 +28,7 @@ extends WorldEnvironment
 @export_group("Volumetric fog")
 @export var volumetric_enabled := true:
 	set(v): volumetric_enabled = v; _apply()
-@export_range(0.0, 0.2, 0.001) var volumetric_density := 0.0022:
+@export_range(0.0, 0.2, 0.0001) var volumetric_density := 0.0009:
 	set(v): volumetric_density = v; _apply()
 @export var volumetric_albedo := Color("c3cbd3"):
 	set(v): volumetric_albedo = v; _apply()

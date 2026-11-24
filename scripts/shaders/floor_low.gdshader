@@ -2,13 +2,14 @@
 // no hive veins). Accepts the same parameters as floor.gdshader.
 shader_type spatial;
 
-uniform vec3 base_color : source_color = vec3(0.16, 0.175, 0.19);
-uniform vec3 seam_color : source_color = vec3(0.05, 0.055, 0.06);
+uniform vec3 base_color : source_color = vec3(0.34, 0.33, 0.31);
+uniform vec3 seam_color : source_color = vec3(0.09, 0.09, 0.09);
 uniform float tile_size = 3.0;
 uniform float seam_width = 0.05;
 uniform float tile_variation = 0.16;
-uniform float metallic_value : hint_range(0.0, 1.0) = 0.55;
-uniform float roughness_value : hint_range(0.0, 1.0) = 0.55;
+uniform float metallic_value : hint_range(0.0, 1.0) = 0.25;
+uniform float roughness_value : hint_range(0.0, 1.0) = 0.62;
+uniform float wetness : hint_range(0.0, 1.0) = 0.45;
 uniform vec3 hive_center = vec3(13.5, 0.0, -8.5);
 uniform float hive_radius = 8.0;
 

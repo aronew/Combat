@@ -37,4 +37,6 @@ func _facing_target() -> Vector3:
 func _speed_factor(dir: Vector3) -> float:
 	if dir == Vector3.ZERO:
 		return 1.0
+	if _detour_t > 0.0:
+		return 0.8  # working round an obstacle: allowed to shuffle sideways
 	return clampf(get_facing().dot(dir), 0.3, 1.0)

@@ -32,8 +32,10 @@ const LEVEL_NAMES := ["DORMANT", "STIRRING", "HUNTING", "ALARM"]
 @export var hunt_pack_size := Vector2i(2, 4)
 
 @export_group("Alarm waves")
-@export var alarm_base_rate := 0.85  ## Bugs per second.
-@export var alarm_rate_from_alert := 1.0  ## Extra bugs/s if you started the uplink at max alert.
+@export var alarm_base_rate := 0.75  ## Bugs per second.
+## Sleeping bugs within this distance wake up when the uplink starts.
+@export var wake_radius := 22.0
+@export var alarm_rate_from_alert := 0.8  ## Extra bugs/s if you started the uplink at max alert.
 @export var alarm_ramp := 0.01  ## Extra bugs/s per second of alarm.
 @export var extract_rate := 0.6
 @export var burster_chance := 0.12
@@ -107,7 +109,7 @@ func start_alarm() -> void:
 	_set_level(AlertLevel.ALARM)
 	# Everything nearby wakes up when the uplink screams.
 	if Game.spawner and Game.player:
-		for e in Game.spawner.enemies_in_radius(Game.player.global_position, 30.0):
+		for e in Game.spawner.enemies_in_radius(Game.player.global_position, wake_radius):
 			e.alert(false)
 
 

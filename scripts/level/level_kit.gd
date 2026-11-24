@@ -14,6 +14,13 @@ var _mesh_cache := {}
 
 var spawn_edges: Array[Dictionary] = []  # {a, b, inward, length, from_shaft}
 var blockers: Array[Vector3] = []  # x, z, radius
+## Repeated static parts (rail posts, trusses, pipes...) are batched into one
+## MultiMesh per mesh+material (see batch / flush_batches): far fewer nodes.
+var _batches := {}
+## Top rail material (null = same as the posts). Themes use red, like the mockups.
+var rail_top_mat: Material
+## Paint yellow edge lines just inside room railings.
+var edge_lines := true
 
 # Tunables (copied from the Level's exports before building).
 var deck_thickness := 1.0
@@ -21,8 +28,8 @@ var rail_height := 1.05
 var rail_post_spacing := 1.8
 var rail_collision_height := 1.3
 var lamp_spacing := 8.0
-var lamp_energy := 3.2
-var lamp_range := 7.0
+var lamp_energy := 6.0
+var lamp_range := 9.0
 var lamp_emission := 6.0
 var lamp_fog_energy := 1.5
 var pillar_strip_energy := 3.5
@@ -71,6 +78,12 @@ func make_materials(hive_center: Vector3, hive_radius: float, tile_size: float) 
 	mats.cobalt_strip = std(Color("0a0f18"), 0.0, 0.5, Color("6fa8ff"), 4.0)
 	mats.red_light = std(Color("200606"), 0.0, 0.5, Color("ff2a2a"), 5.0)
 	mats.amber_strip = std(Color("201a10"), 0.0, 0.5, Color("ffae45"), 4.0)
+	mats.paint_yellow = std(Color("b8952a"), 0.0, 0.75)
+	mats.rail_light = std(Color("1a1d20"), 0.0, 0.5, Color("e9f2ff"), 3.0)
+	mats.pipe = std(Color("5d646b"), 0.7, 0.4)
+	mats.pipe_dark = std(Color("3b4147"), 0.6, 0.5)
+	mats.truss = std(Color("1c2226"), 0.6, 0.55)
+	mats.abyss_glow = std(Color(0.0, 0.05, 0.06), 0.0, 0.4, Color("2fd8e8"), 1.6)
 
 
 func std(albedo: Color, metallic: float, roughness: float, emission := Color.BLACK, emission_energy := 0.0) -> StandardMaterial3D:
@@ -114,6 +127,60 @@ func box(size: Vector3, pos: Vector3, mat: Material, collide := false, rot_y := 
 	if collide:
 		collider(size, pos, rot_y)
 	return mi
+
+
+## Queue a box for batching (one MultiMesh per material+shadow flag).
+func batch_box(size: Vector3, pos: Vector3, mat: Material, basis := Basis(), shadows := true) -> void:
+	_batch("box", Transform3D(basis.scaled_local(size), pos), mat, shadows)
+
+
+## Queue a horizontal pipe from a to b (radius r) for batching.
+func batch_pipe(a: Vector3, b: Vector3, r: float, mat: Material) -> void:
+	var d := b - a
+	var length := d.length()
+	if length < 0.05:
+		return
+	var y := d / length
+	var x := y.cross(Vector3.UP)
+	if x.length_squared() < 0.001:
+		x = Vector3.RIGHT
+	x = x.normalized()
+	var z := x.cross(y)
+	var basis := Basis(x * r * 2.0, y * length, z * r * 2.0)
+	_batch("pipe", Transform3D(basis, (a + b) * 0.5), mat, true)
+
+
+func _batch(kind: String, xf: Transform3D, mat: Material, shadows: bool) -> void:
+	var key := "%s|%d|%s" % [kind, mat.get_instance_id(), shadows]
+	if not _batches.has(key):
+		_batches[key] = {"kind": kind, "mat": mat, "shadows": shadows, "xforms": []}
+	_batches[key].xforms.append(xf)
+
+
+## Build the MultiMeshes. Call once after building.
+func flush_batches() -> void:
+	var unit_box := BoxMesh.new()
+	var unit_pipe := CylinderMesh.new()
+	unit_pipe.top_radius = 0.5
+	unit_pipe.bottom_radius = 0.5
+	unit_pipe.height = 1.0
+	unit_pipe.radial_segments = 8
+	unit_pipe.rings = 1
+	for key in _batches:
+		var b: Dictionary = _batches[key]
+		var mm := MultiMesh.new()
+		mm.transform_format = MultiMesh.TRANSFORM_3D
+		mm.mesh = unit_box if b.kind == "box" else unit_pipe
+		mm.instance_count = b.xforms.size()
+		for i in b.xforms.size():
+			mm.set_instance_transform(i, b.xforms[i])
+		var mmi := MultiMeshInstance3D.new()
+		mmi.multimesh = mm
+		mmi.material_override = b.mat
+		if not b.shadows:
+			mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		root.add_child(mmi)
+	_batches.clear()
 
 
 func collider(size: Vector3, pos: Vector3, rot_y := 0.0) -> void:
@@ -204,12 +271,73 @@ func deck(r: Rect2, floor_mat: Material = null, pillars := true) -> void:
 	var n := maxi(1, int(r.size.x / 4.0))
 	for i in n + 1:
 		var x := r.position.x + i * (r.size.x / n)
-		box(Vector3(0.45, 1.4, maxf(r.size.y - 0.6, 0.5)), Vector3(x, -deck_thickness - 1.0, c.z), mats.beam, false, 0.0, false)
+		batch_box(Vector3(0.45, 1.4, maxf(r.size.y - 0.6, 0.5)), Vector3(x, -deck_thickness - 1.0, c.z), mats.beam, Basis(), false)
+	# Service pipes running along the slab's sides.
+	var y1 := -deck_thickness * 0.45
+	var y2 := -deck_thickness * 0.8
+	for side in [[Vector3(r.position.x, 0, r.position.y), Vector3(r.end.x, 0, r.position.y), Vector3(0, 0, -0.32)],
+			[Vector3(r.position.x, 0, r.end.y), Vector3(r.end.x, 0, r.end.y), Vector3(0, 0, 0.32)],
+			[Vector3(r.position.x, 0, r.position.y), Vector3(r.position.x, 0, r.end.y), Vector3(-0.32, 0, 0)],
+			[Vector3(r.end.x, 0, r.position.y), Vector3(r.end.x, 0, r.end.y), Vector3(0.32, 0, 0)]]:
+		var a: Vector3 = side[0]
+		var b: Vector3 = side[1]
+		var off: Vector3 = side[2]
+		batch_pipe(a + off + Vector3(0, y1, 0), b + off + Vector3(0, y1, 0), 0.11, mats.pipe)
+		batch_pipe(a + off * 1.5 + Vector3(0, y2, 0), b + off * 1.5 + Vector3(0, y2, 0), 0.08, mats.pipe_dark)
 	if pillars and r.size.x > 6.0 and r.size.y > 6.0:
 		for sx in [-1.0, 1.0]:
 			for sz in [-1.0, 1.0]:
 				var p := c + Vector3(sx * (r.size.x * 0.5 - 2.0), 0, sz * (r.size.y * 0.5 - 2.0))
-				box(Vector3(1.6, 90.0, 1.6), p + Vector3(0, -deck_thickness - 45.0, 0), mats.pillar, false, 0.0, false)
+				truss(p, 1.6, -deck_thickness - 0.2, 30.0)
+
+
+## Floor material with a different base tint (cached), for room purposes.
+func floor_variant(tint: Color) -> ShaderMaterial:
+	var key := "floor_%s" % tint.to_html()
+	if not mats.has(key):
+		var m: ShaderMaterial = mats.floor.duplicate()
+		m.set_shader_parameter("base_color", tint)
+		mats[key] = m
+	return mats[key]
+
+
+## Painted floor guide line loop around a rect with cut corners (mockups).
+func guide_loop(r: Rect2, chamfer: float, width := 0.16, mat: Material = null) -> void:
+	var m: Material = mat if mat else mats.guide_white
+	var x0 := r.position.x
+	var x1 := r.end.x
+	var z0 := r.position.y
+	var z1 := r.end.y
+	var pts := [Vector3(x0 + chamfer, 0, z0), Vector3(x1 - chamfer, 0, z0), Vector3(x1, 0, z0 + chamfer), Vector3(x1, 0, z1 - chamfer),
+		Vector3(x1 - chamfer, 0, z1), Vector3(x0 + chamfer, 0, z1), Vector3(x0, 0, z1 - chamfer), Vector3(x0, 0, z0 + chamfer)]
+	for i in pts.size():
+		var a: Vector3 = pts[i]
+		var b: Vector3 = pts[(i + 1) % pts.size()]
+		var d := b - a
+		batch_box(Vector3(d.length() + width * 0.5, 0.02, width), (a + b) * 0.5 + Vector3(0, 0.012, 0), m, Basis(Vector3.UP, atan2(-d.z, d.x)), false)
+
+
+## Steel lattice column dropping into the void: four posts with X bracing.
+func truss(top: Vector3, width: float, y_top: float, depth: float) -> void:
+	var h := width * 0.5
+	var corners := [Vector3(-h, 0, -h), Vector3(h, 0, -h), Vector3(h, 0, h), Vector3(-h, 0, h)]
+	for cpos in corners:
+		batch_box(Vector3(0.2, depth, 0.2), top + cpos + Vector3(0, y_top - depth * 0.5, 0), mats.truss, Basis(), false)
+	var step := 3.2
+	var levels := int(depth / step)
+	var diag := sqrt(width * width + step * step)
+	var ang := atan2(step, width)
+	for lv in levels:
+		var y := y_top - (lv + 0.5) * step
+		for f in 4:
+			var a: Vector3 = corners[f]
+			var b: Vector3 = corners[(f + 1) % 4]
+			var mid := top + (a + b) * 0.5 + Vector3(0, y, 0)
+			var along := (b - a).normalized()
+			var face := Basis(Vector3.UP, atan2(-along.z, along.x))
+			for s in [-1.0, 1.0]:
+				batch_box(Vector3(diag, 0.12, 0.12), mid, mats.truss, face * Basis(Vector3.BACK, s * ang), false)
+		batch_box(Vector3(width, 0.14, 0.14), top + Vector3(0, y - step * 0.5, -h), mats.truss, Basis(), false)
 
 
 ## Narrow grated catwalk over the void (rect is the walkable area).
@@ -244,13 +372,17 @@ func rail_run(a: Vector3, b: Vector3, inward: Vector3, lamp_color := Color("ffae
 	var rot := atan2(-dir.z, dir.x)
 	var mid := (a + b) * 0.5
 	var rm: Material = rail_mat if rail_mat else mats.rail
-	box(Vector3(length, 0.08, 0.08), mid + Vector3(0, rail_height, 0), rm, false, rot)
-	box(Vector3(length, 0.05, 0.05), mid + Vector3(0, rail_height * 0.55, 0), rm, false, rot, false)
-	box(Vector3(length, 0.2, 0.05), mid + Vector3(0, 0.1, 0), mats.rail_dark, false, rot, false)
+	var top_m: Material = rail_mat if rail_mat else (rail_top_mat if rail_top_mat else rm)
+	var rb := Basis(Vector3.UP, rot)
+	batch_box(Vector3(length, 0.09, 0.09), mid + Vector3(0, rail_height, 0), top_m, rb)
+	batch_box(Vector3(length, 0.05, 0.05), mid + Vector3(0, rail_height * 0.55, 0), rm, rb, false)
+	batch_box(Vector3(length, 0.2, 0.05), mid + Vector3(0, 0.1, 0), mats.rail_dark, rb, false)
 	var posts := maxi(1, ceili(length / rail_post_spacing))
 	for i in posts + 1:
 		var p := a + dir * (length * i / posts)
-		box(Vector3(0.1, rail_height, 0.1), p + Vector3(0, rail_height * 0.5, 0), rm, false, rot, false)
+		batch_box(Vector3(0.1, rail_height, 0.1), p + Vector3(0, rail_height * 0.5, 0), rm, rb, false)
+		if i % 3 == 1:
+			batch_box(Vector3(0.05, 0.22, 0.12), p + Vector3(0, rail_height * 0.62, 0) + inward * 0.06, mats.rail_light, rb, false)
 	collider(Vector3(length, rail_collision_height, 0.3), mid + Vector3(0, rail_collision_height * 0.5, 0), rot)
 	if lamps and length >= lamp_spacing * 0.6:
 		var count := maxi(1, roundi(length / lamp_spacing))
@@ -260,11 +392,18 @@ func rail_run(a: Vector3, b: Vector3, inward: Vector3, lamp_color := Color("ffae
 		spawn_edges.append({"a": a, "b": b, "inward": inward, "length": length, "from_shaft": from_shaft})
 
 
+## Tall lamp post at the railing with an arm leaning over the deck and a light
+## bar head: lights a pool of deck (and casts long shadows on HIGH).
 func lamp(pos: Vector3, inward: Vector3, color: Color) -> void:
-	box(Vector3(0.1, 1.6, 0.1), pos + Vector3(0, 0.8, 0), mats.lamp_post, false, 0.0, false)
-	box(Vector3(0.2, 0.34, 0.2), pos + Vector3(0, 1.66, 0), lamp_mat(color), false, 0.0, false)
-	box(Vector3(0.24, 0.05, 0.24), pos + Vector3(0, 1.85, 0), mats.lamp_post, false, 0.0, false)
-	omni(pos + inward * 0.35 + Vector3(0, 1.7, 0), color, lamp_energy, lamp_range, lamp_fog_energy)
+	var h := 3.1
+	var rb := Basis(Vector3.UP, atan2(-inward.z, inward.x))
+	batch_box(Vector3(0.14, h, 0.14), pos + Vector3(0, h * 0.5, 0), mats.lamp_post)
+	batch_box(Vector3(0.24, 0.3, 0.24), pos + Vector3(0, 0.15, 0), mats.lamp_post, Basis(), false)
+	batch_box(Vector3(0.85, 0.1, 0.1), pos + inward * 0.38 + Vector3(0, h - 0.05, 0), mats.lamp_post, rb)
+	batch_box(Vector3(0.55, 0.1, 0.24), pos + inward * 0.78 + Vector3(0, h - 0.13, 0), mats.lamp_post, rb)
+	batch_box(Vector3(0.48, 0.03, 0.18), pos + inward * 0.78 + Vector3(0, h - 0.19, 0), lamp_mat(color), rb, false)
+	var l := omni(pos + inward * 0.78 + Vector3(0, h - 0.45, 0), color, lamp_energy, lamp_range, lamp_fog_energy)
+	l.set_meta("lamp", true)
 
 
 ## Railings around a rect, leaving gaps for `openings` ({side, lo, hi}).
@@ -301,6 +440,11 @@ func _rail_segment(along_x: bool, origin: Vector3, s0: float, s1: float, inward:
 	var p0 := Vector3(s0, 0, origin.z) if along_x else Vector3(origin.x, 0, s0)
 	var p1 := Vector3(s1, 0, origin.z) if along_x else Vector3(origin.x, 0, s1)
 	rail_run(p0, p1, inward, lamp_color, true, spawn_on, false, rail_mat)
+	# Worn yellow safety line painted just inside the railing.
+	if edge_lines and s1 - s0 > 1.2:
+		var d := p1 - p0
+		var lm := (p0 + p1) * 0.5 + inward * 0.55 + Vector3(0, 0.012, 0)
+		batch_box(Vector3(d.length() - 0.6, 0.02, 0.14), lm, mats.paint_yellow, Basis(Vector3.UP, atan2(-d.z, d.x)), false)
 
 
 func guide_line(a: Vector3, b: Vector3, width := 0.16, mat: Material = null) -> void:
@@ -330,6 +474,44 @@ func crate(x: float, z: float, rot_deg: float, stack: int) -> void:
 		h += sz.y
 	collider(Vector3(size.x, h + 0.1, size.z), base + Vector3(0, (h + 0.1) * 0.5, 0), rot)
 	add_blocker(x, z, 1.15)
+
+
+## A dead creature for feeding bugs to crowd round: a split carapace, curled
+## legs and a pool of glowing ichor. Visual only.
+func carcass(pos: Vector3, rot_y: float, size := 1.0) -> void:
+	if not mats.has("carcass"):
+		mats.carcass = std(Color("2b2a22"), 0.2, 0.6)
+		mats.carcass_flesh = std(Color("3d1f1a"), 0.0, 0.8)
+		mats.ichor = std(Color(0.05, 0.08, 0.02), 0.0, 0.15, Color("6fd12a"), 0.35)
+	var basis := Basis(Vector3.UP, rot_y)
+	# Irregular puddle: a few overlapping flat blobs.
+	for k in 4:
+		var blob := MeshInstance3D.new()
+		var cm := CylinderMesh.new()
+		var r := randf_range(0.45, 0.85) * size
+		cm.top_radius = r
+		cm.bottom_radius = r
+		cm.height = 0.012
+		cm.radial_segments = 14
+		blob.mesh = cm
+		blob.material_override = mats.ichor
+		blob.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		blob.position = pos + basis * Vector3(randf_range(-0.7, 0.7), 0.012 + k * 0.001, randf_range(-0.5, 0.5)) * size
+		blob.scale = Vector3(randf_range(1.0, 1.6), 1.0, randf_range(0.7, 1.0))
+		blob.rotation.y = randf() * TAU
+		root.add_child(blob)
+	var body := sphere(0.55 * size, pos + Vector3(0, 0.2, 0) * size, mats.carcass, Vector3(1.5, 0.55, 0.9))
+	body.rotation.y = rot_y
+	var torn := sphere(0.32 * size, pos + basis * Vector3(0.35, 0.3, 0.1) * size, mats.carcass_flesh, Vector3(1.0, 0.6, 0.8))
+	torn.rotation.y = rot_y
+	for i in 6:
+		var side := -1.0 if i < 3 else 1.0
+		var k := float(i % 3) - 1.0
+		var root := pos + basis * Vector3(k * 0.45, 0.15, side * 0.35) * size
+		var tip := pos + basis * Vector3(k * 0.7 + randf_range(-0.2, 0.2), 0.05, side * 1.05) * size
+		var d := tip - root
+		var leg := box(Vector3(d.length(), 0.07, 0.07) * Vector3(1, size, size), (root + tip) * 0.5, mats.carcass, false, atan2(-d.z, d.x), false)
+		leg.rotation.z = 0.3 * side
 
 
 ## Solid bulkhead wall between two points (with collision), e.g. the pressure lock.
@@ -397,6 +579,20 @@ func void_dressing(bounds: Rect2, fog_top: float, fog_density: float, fog_albedo
 		(cage_deck.material_override as ShaderMaterial).set_shader_parameter("frame_half_extents", Vector2(1.5, 1.5))
 		box(Vector3(3.0, 0.06, 0.06), cage + Vector3(0, 1.0, 1.47), mats.rail_dark, false, 0.0, false)
 		box(Vector3(0.4, 0.12, 0.05), cage + Vector3(0, 1.4, 1.5), mats.teal_strip, false, 0.0, false)
+
+	# Glow from the depths: cyan pools and lit machinery far below the decks
+	# (emissive only, no lights, so it costs next to nothing).
+	var cells_x := int(ceil((bounds.size.x + 60.0) / 30.0))
+	var cells_z := int(ceil((bounds.size.y + 60.0) / 30.0))
+	for ix in cells_x:
+		for iz in cells_z:
+			if rng.randf() > 0.4:
+				continue
+			var gp := Vector3(bounds.position.x - 30.0 + (ix + 0.5) * 30.0 + rng.randf_range(-8.0, 8.0),
+				rng.randf_range(-44.0, -32.0), bounds.position.y - 30.0 + (iz + 0.5) * 30.0 + rng.randf_range(-8.0, 8.0))
+			batch_box(Vector3(rng.randf_range(10.0, 26.0), 0.6, rng.randf_range(8.0, 22.0)), gp, mats.abyss_glow, Basis(Vector3.UP, rng.randf_range(0.0, 0.4)), false)
+			if rng.randf() < 0.5:
+				truss(gp + Vector3(rng.randf_range(-4.0, 4.0), 0, rng.randf_range(-4.0, 4.0)), 2.2, 30.0, 30.0)
 
 	# Fog volumes need Forward+; the Compatibility renderer can't draw them.
 	if RenderingServer.get_current_rendering_method() == "gl_compatibility":

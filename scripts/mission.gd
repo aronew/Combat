@@ -63,6 +63,9 @@ func _begin() -> void:
 	if spawn_population and Game.spawner:
 		for p in lvl.placements:
 			var opts := {"tier": p.tier, "to": p.to, "alerted": false}
+			for k in ["idle", "food", "radius", "route"]:
+				if p.has(k):
+					opts[k] = p[k]
 			Game.spawner.spawn_now(p.type, p.mode, p.pos, opts)
 		for t in lvl.turret_spots:
 			Game.spawner.spawn_static(Game.spawner.turret_scene, t.pos, t.yaw)

@@ -97,6 +97,23 @@ var _kit: LevelKit
 ## The deck material (Graphics swaps its shader for a cheaper one on LOW).
 func floor_material() -> ShaderMaterial:
 	return _kit.mats.get("floor") if _kit else null
+
+
+## Graphics quality hook: the deep cyan glow is softened by fog on MEDIUM/HIGH;
+## without fog (LOW) it reads as flat slabs, so dim it there.
+func set_low_quality(low: bool) -> void:
+	if _kit and _kit.mats.has("abyss_glow"):
+		(_kit.mats.abyss_glow as StandardMaterial3D).emission_energy_multiplier = 0.35 if low else 1.6
+
+
+## All deck materials, including per-room tinted variants.
+func floor_materials() -> Array[ShaderMaterial]:
+	var out: Array[ShaderMaterial] = []
+	if _kit:
+		for k in _kit.mats:
+			if str(k).begins_with("floor"):
+				out.append(_kit.mats[k])
+	return out
 var _adj: Array = []  # region -> Array of portal indices
 var _next: Array = []  # [from][to] -> portal index (or -1)
 var _blockers: Array[Vector3] = []
@@ -147,7 +164,7 @@ func region_neighbors(r: int) -> Array[int]:
 
 ## Next point to run toward to get from `from` to `to`, routing through
 ## doorways/bridges. Inside the same convex region it is simply `to`.
-func get_nav_target(from: Vector3, to: Vector3) -> Vector3:
+func get_nav_target(from: Vector3, to: Vector3, radius := 0.4) -> Vector3:
 	var rf := region_of(from)
 	var rt := region_of(to)
 	if rf < 0 or rt < 0 or rf == rt:
@@ -163,13 +180,19 @@ func get_nav_target(from: Vector3, to: Vector3) -> Vector3:
 	rel.y = 0.0
 	var along := rel.dot(n)
 	var side := rel.dot(lat)
-	var limit := maxf(p.half - 0.6, 0.0)
+	# Big agents (shield bugs) need more clearance from the doorway's sides.
+	var clearance := maxf(0.6, radius + 0.35)
+	var limit := maxf(p.half - clearance, 0.0)
 	var entry := c + lat * clampf(side, -limit, limit)
 	var approach := entry - n * 1.0
 	# Cross when lined up with the doorway, or when already standing at the
-	# approach point (otherwise an agent can idle there just outside tolerance).
-	var at_approach := Vector2(from.x - approach.x, from.z - approach.z).length() < 0.9
-	if (along > -1.6 and absf(side) < p.half - 0.45) or at_approach:
+	# approach point (otherwise an agent can idle there just outside tolerance)
+	# as long as it physically fits through from where it stands.
+	var fits: bool = absf(side) < p.half - radius - 0.1
+	var at_approach: bool = fits and Vector2(from.x - approach.x, from.z - approach.z).length() < 0.9
+	# "Lined up" matches the clamp above (plus slack), so an agent standing on
+	# the approach line never flips between approaching and crossing.
+	if (along > -1.6 and absf(side) <= limit + 0.3) or at_approach:
 		return entry + n * 1.4
 	return approach
 
@@ -309,6 +332,8 @@ func _rebuild() -> void:
 	if generated:
 		_kit.lamp_spacing = 11.0
 	_kit.make_materials(hive_center, hive_radius, tile_size)
+	if generated and layout.get("red_rails", false):
+		_kit.rail_top_mat = _kit.mats.rail_red
 
 	_build_regions()
 	if generated:
@@ -318,6 +343,7 @@ func _rebuild() -> void:
 	_build_bridges()
 	_finish_spawn_edges()
 	_kit.void_dressing(bounds, void_fog_top, void_fog_density, void_fog_albedo, void_fog_emission)
+	_kit.flush_batches()
 	_blockers.append_array(_kit.blockers)
 	if not Engine.is_editor_hint():
 		if generated:
@@ -380,6 +406,7 @@ func _build_regions() -> void:
 			e.b = j
 			portals.append(e)
 
+	_merge_split_doorways()
 	_adj.clear()
 	for i in regions.size():
 		_adj.append([])
@@ -406,6 +433,51 @@ func _build_regions() -> void:
 				seen[other] = true
 				_next[other][dest] = pi  # from `other`, step through pi toward dest
 				queue.append(other)
+
+
+## A catwalk that meets a room across a seam between two of its walkway strips
+## gets two narrow portals. Physically it's one doorway, so give both portals
+## the full (merged) width: big bugs then line up with the real opening.
+func _merge_split_doorways() -> void:
+	var groups := {}
+	for pi in portals.size():
+		var p: Dictionary = portals[pi]
+		var a_bridge: bool = regions[p.a].room == &"bridge"
+		var b_bridge: bool = regions[p.b].room == &"bridge"
+		if a_bridge == b_bridge:
+			continue
+		var bridge_r: int = p.a if a_bridge else p.b
+		var coord: float = p.center.x if p.axis == &"x" else p.center.z
+		var key := "%d|%s|%.2f" % [bridge_r, p.axis, coord]
+		if not groups.has(key):
+			groups[key] = []
+		groups[key].append(pi)
+	for key in groups:
+		var list: Array = groups[key]
+		if list.size() < 2:
+			continue
+		list.sort_custom(func(x, y): return portals[x].lo < portals[y].lo)
+		var run: Array = [list[0]]
+		for k in range(1, list.size() + 1):
+			var cont := k < list.size() and absf(portals[list[k]].lo - portals[run[run.size() - 1]].hi) < 0.05
+			if cont:
+				run.append(list[k])
+				continue
+			if run.size() > 1:
+				var lo: float = portals[run[0]].lo
+				var hi: float = portals[run[run.size() - 1]].hi
+				for pi in run:
+					var c: Vector3 = portals[pi].center
+					if portals[pi].axis == &"x":
+						c.z = (lo + hi) * 0.5
+					else:
+						c.x = (lo + hi) * 0.5
+					portals[pi].center = c
+					portals[pi].lo = lo
+					portals[pi].hi = hi
+					portals[pi].half = (hi - lo) * 0.5
+			if k < list.size():
+				run = [list[k]]
 
 
 ## Shared boundary segment of two touching rects, or {} if they don't touch.
@@ -609,30 +681,75 @@ func _build_generated_rooms() -> void:
 	for room in rooms:
 		var r: Rect2 = room.rect
 		var lamp_c: Color = room.lamp
+		var tint: Color = room.get("floor_tint", Color(0, 0, 0, 0))
+		var fm: Material = _kit.floor_variant(tint) if tint.a > 0.0 else null
+		# Walled sides get no railing (the wall props stand there instead).
+		var openings := _openings_for(r)
+		for side in room.get("walls", []):
+			var full_lo := r.position.x if side == "n" or side == "s" else r.position.y
+			var full_hi := r.end.x if side == "n" or side == "s" else r.end.y
+			openings.append({"side": StringName(side), "lo": full_lo, "hi": full_hi})
 		match room.kind:
 			"block":
-				_kit.deck(r)
-				_kit.rails_around(r, _openings_for(r), lamp_c)
-				_kit.machinery_block(room.block)
+				_kit.deck(r, fm)
+				_kit.rails_around(r, openings, lamp_c)
+				if room.get("block_props", false):
+					var blk: Rect2 = room.block
+					_kit.collider(Vector3(blk.size.x, 2.4, blk.size.y), Vector3(blk.get_center().x, 1.2, blk.get_center().y))
+					var steps := int(blk.size.x / 2.0)
+					for i in steps + 1:
+						var x := blk.position.x + i * (blk.size.x / steps)
+						for s in [-1.0, 1.0]:
+							_kit.add_blocker(x, blk.get_center().y + s * blk.size.y * 0.25, blk.size.y * 0.5 + 0.4)
+					_kit.box(Vector3(blk.size.x - 0.2, 2.0, maxf(blk.size.y - 2.0, 0.1)), Vector3(blk.get_center().x, 1.0, blk.get_center().y), _kit.mats.machine_dark)
+				else:
+					_kit.machinery_block(room.block)
 				minimap_solids.append(room.block)
 			"hole":
 				var hole: Rect2 = room.hole
 				for strip in _ring_strips(r, hole):
-					_kit.deck(strip, null, false)
-				_kit.rails_around(r, _openings_for(r), lamp_c)
+					_kit.deck(strip, fm, false)
+				_kit.rails_around(r, openings, lamp_c)
 				_hole_rails(hole, lamp_c)
 			"split":
-				_kit.deck(r)
-				_kit.rails_around(r, _openings_for(r), lamp_c)
+				_kit.deck(r, fm)
+				_kit.rails_around(r, openings, lamp_c)
 				var sx: float = room.split_x
 				var door: Vector2 = room.door
-				_kit.wall(Vector3(sx, 0, r.position.y), Vector3(sx, 0, door.x))
-				_kit.wall(Vector3(sx, 0, door.y), Vector3(sx, 0, r.end.y))
+				# Bulkhead built from wall panels (facing the camera side, east).
+				for seg in [Vector2(r.position.y, door.x), Vector2(door.y, r.end.y)]:
+					var length: float = seg.y - seg.x
+					if length < 0.5:
+						continue
+					var n := maxi(1, roundi(length / 3.0))
+					for k in n:
+						var z: float = seg.x + (k + 0.5) * length / n
+						Props.place(_kit, "wall_panel", Vector3(sx, 0, z), -PI * 0.5, Vector3(length / n / 3.0, 1, 1))
+					for i in int(length):
+						_kit.add_blocker(sx, seg.x + i + 0.5, 0.7)
 				minimap_solids.append(Rect2(sx - 0.3, r.position.y, 0.6, door.x - r.position.y))
 				minimap_solids.append(Rect2(sx - 0.3, door.y, 0.6, r.end.y - door.y))
 			_:
-				_kit.deck(r)
-				_kit.rails_around(r, _openings_for(r), lamp_c)
+				_kit.deck(r, fm)
+				_kit.rails_around(r, openings, lamp_c)
+		for side in room.get("walls", []):
+			var a := Vector3(r.position.x, 0, r.position.y)
+			var b := Vector3(r.end.x, 0, r.position.y) if side == "n" else Vector3(r.position.x, 0, r.end.y)
+			minimap_solids.append(Rect2(Vector2(a.x, a.z), Vector2(b.x - a.x, b.z - a.z)).grow(0.25).abs())
+	for pr in layout.props:
+		Props.place(_kit, pr.name, pr.pos, pr.yaw, pr.scale, pr.tint)
+	for wl in layout.wall_lights:
+		var l := _kit.omni(wl.pos, wl.color, _kit.lamp_energy * 0.8, _kit.lamp_range, _kit.lamp_fog_energy)
+		l.set_meta("lamp", true)
+	for gl in layout.guide_loops:
+		_kit.guide_loop(gl.rect, gl.chamfer)
+	for sp in layout.shaft_pipes:
+		var h: Rect2 = sp.rect
+		for k in int(sp.count):
+			var t := (k + 1.0) / (int(sp.count) + 1.0)
+			var z := lerpf(h.position.y, h.end.y, t)
+			_kit.batch_pipe(Vector3(h.position.x - 0.5, -0.6 - k * 0.5, z), Vector3(h.end.x + 0.5, -0.6 - k * 0.5, z), 0.22, _kit.mats.pipe)
+			_kit.batch_pipe(Vector3(h.position.x - 0.5, -0.9 - k * 0.5, z + 0.6), Vector3(h.end.x + 0.5, -0.9 - k * 0.5, z + 0.6), 0.14, _kit.mats.pipe_dark)
 	for c in layout.crates:
 		_kit.crate(c.x, c.y, c.z, int(c.w))
 	for pnl in layout.panels:
@@ -641,6 +758,8 @@ func _build_generated_rooms() -> void:
 	for g in layout.guides:
 		_kit.guide_line(g[0], g[1], 0.14, _kit.mats.guide_white if white else null)
 		white = not white
+	for cc in layout.carcasses:
+		_kit.carcass(cc[0], cc[1])
 	for sg in layout.shaft_glows:
 		var c: Vector3 = sg.pos
 		var size: float = sg.size
@@ -796,9 +915,13 @@ func _build_gameplay() -> void:
 
 
 func _build_placements() -> void:
-	# Catwalk Deck: a sleeping cluster by the barrels, one patrol across the middle.
-	for p in [Vector3(6.0, 0, -5.2), Vector3(7.2, 0, -4.0), Vector3(5.2, 0, -3.6), Vector3(7.8, 0, -5.8), Vector3(4.8, 0, -5.0)]:
-		_place(&"swarmer", p, &"dormant")
+	# Catwalk Deck: a pack feeding on a carcass by the barrels, one patrol across the middle.
+	var food := Vector3(6.3, 0, -4.7)
+	_kit.carcass(food, 0.6)
+	for k in 5:
+		var a := TAU * k / 5.0
+		placements.append({"type": &"swarmer", "pos": food + Vector3(cos(a), 0, sin(a)) * 1.2, "mode": &"dormant",
+			"to": Vector3.ZERO, "tier": 0, "idle": &"feed", "food": food})
 	_place(&"swarmer", Vector3(-9.0, 0, -1.0), &"patrol", Vector3(9.0, 0, -1.0))
 	# Switchgear Gallery: patrol looping the south walkway, shield bug + bursters north.
 	_place(&"swarmer", Vector3(-11.0, 0, -19.5), &"patrol", Vector3(11.0, 0, -19.5))
@@ -807,18 +930,22 @@ func _build_placements() -> void:
 	_place(&"burster", Vector3(10.4, 0, -28.6), &"dormant")
 	_place(&"burster", Vector3(9.4, 0, -27.6), &"dormant")
 	# Pressure Lock: west sleepers by the barrels; east patrol shield + sleepers.
-	for p in [Vector3(26.6, 0, -28.2), Vector3(27.6, 0, -27.0), Vector3(25.8, 0, -26.6), Vector3(28.0, 0, -29.0)]:
-		_place(&"swarmer", p, &"dormant")
+	for p in [Vector3(26.6, 0, -28.2), Vector3(27.6, 0, -26.2), Vector3(25.2, 0, -26.6), Vector3(28.4, 0, -29.4)]:
+		_place(&"swarmer", p, &"dormant", Vector3.ZERO, 0, &"burrow")
 	_place(&"shield", Vector3(36.5, 0, -28.0), &"patrol", Vector3(36.5, 0, -18.5))
 	for p in [Vector3(39.0, 0, -30.6), Vector3(38.0, 0, -31.2), Vector3(39.6, 0, -29.4)]:
 		_place(&"swarmer", p, &"dormant")
 	# Reactor Ring: guards around the uplink.
 	for p in [Vector3(31.0, 0, -63.4), Vector3(32.0, 0, -61.8), Vector3(30.2, 0, -61.6),
 			Vector3(42.0, 0, -63.4), Vector3(41.0, 0, -62.0), Vector3(43.0, 0, -62.2)]:
-		_place(&"swarmer", p, &"dormant")
+		_place(&"swarmer", p, &"dormant", Vector3.ZERO, 0, &"wander")
 	_place(&"swarmer", Vector3(36.5, 0, -61.0), &"dormant", Vector3.ZERO, Enemy.Tier.GOLD)
 	_place(&"burster", Vector3(28.0, 0, -50.0), &"patrol", Vector3(28.0, 0, -62.0))
 
 
-func _place(type: StringName, pos: Vector3, mode: StringName, to := Vector3.ZERO, tier := 0) -> void:
-	placements.append({"type": type, "pos": pos, "mode": mode, "to": to, "tier": tier})
+func _place(type: StringName, pos: Vector3, mode: StringName, to := Vector3.ZERO, tier := 0, idle_mode: StringName = &"") -> void:
+	var d := {"type": type, "pos": pos, "mode": mode, "to": to, "tier": tier}
+	if idle_mode != &"":
+		d["idle"] = idle_mode
+		d["radius"] = 2.0
+	placements.append(d)

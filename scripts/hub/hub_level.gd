@@ -50,6 +50,7 @@ func _rebuild() -> void:
 	_kit.crate(7.9, 6.6, 0, 2)
 	_kit.crate(-12.0, -1.0, 90, 1)
 	_kit.void_dressing(r.grow(6.0), -2.5, 0.04, Color("b6bec6"), Color.BLACK)
+	_kit.flush_batches()
 
 	if Engine.is_editor_hint():
 		return

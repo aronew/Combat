@@ -50,6 +50,12 @@ const TIER_SALVAGE := [1, 3, 6, 30]
 @export var investigate_speed := 0.55
 @export var patrol_speed := 0.32
 
+@export_group("Idle")
+## Burrowed bugs only notice you this close (or on loud noise).
+@export var burrow_sense_range := 2.4
+## Move speed multiplier while wandering about unaware.
+@export var wander_speed := 0.22
+
 @export_group("Movement")
 @export var acceleration := 38.0
 @export var turn_speed := 14.0
@@ -119,6 +125,19 @@ var _corrode_t := 0.0
 var _status_fx_t := 0.0
 var _bite_t := -1.0
 var _bite_cd := 0.0
+## What an unaware bug is doing: &"sleep", &"feed" (around `_food`), &"burrow"
+## (hidden under a mound), &"wander" (milling about home) or &"roam" (walking a
+## route of waypoints between rooms). Set from spawn opts {"idle": ...}.
+var idle: StringName = &"sleep"
+var _food := Vector3.ZERO
+var _wander_r := 0.0
+var _wander_to := Vector3.INF
+var _route: Array[Vector3] = []
+var _route_i := 0
+var _idle_t := 0.0
+var _mound: Node3D
+static var _mound_mat: StandardMaterial3D
+static var _mound_glow: StandardMaterial3D
 var _anim: AnimationPlayer
 var _anim_lock := 0.0
 
@@ -145,6 +164,7 @@ func _ready() -> void:
 	_aura.position = Vector3(0, 0.05, 0)
 	_aura.visible = false
 	add_child(_aura)
+	_build_mound()
 
 
 # ==========================================================================
@@ -160,11 +180,27 @@ func spawn_at(pos: Vector3, mode: StringName, opts := {}) -> void:
 	var p := Vector3(pos.x, 0.0, pos.z)
 	_home = p
 	_entrance_alerted = opts.get("alerted", mode != &"dormant" and mode != &"patrol")
+	idle = opts.get("idle", &"sleep")
+	_food = opts.get("food", p)
+	_wander_r = float(opts.get("radius", 2.5 if idle == &"wander" else 0.0))
+	_wander_to = Vector3.INF
+	_route.assign(opts.get("route", []))
+	_route_i = 0
+	_idle_t = randf_range(0.5, 3.0)
+	_set_mound(false)
 	match mode:
 		&"dormant":
 			state = State.DORMANT
 			global_position = p
 			visual.rotation.y = opts.get("yaw", randf() * TAU)
+			match idle:
+				&"wander", &"roam":
+					state = State.PATROL
+					_patrol_to = p
+				&"burrow":
+					_set_mound(true)
+				&"feed":
+					_face_dir(_food - p, 1.0)
 		&"patrol":
 			state = State.PATROL
 			global_position = p
@@ -326,7 +362,10 @@ func hear_noise(pos: Vector3, loud: bool) -> void:
 		return
 	if loud or (Game.director and Game.director.level >= HiveDirector.AlertLevel.HUNTING):
 		alert(false)
+	elif idle == &"burrow" and state == State.DORMANT:
+		return  # too deep to hear anything quiet
 	else:
+		_reset_pose()
 		state = State.INVESTIGATE
 		_noise_pos = Vector3(pos.x, 0.0, pos.z)
 		_wait = 0.0
@@ -340,7 +379,20 @@ func alert(scream := true) -> void:
 	if state == State.EMERGE or state == State.LEAP or state == State.DROP:
 		_entrance_alerted = true
 		return
-	state = State.CHASE
+	_reset_pose()
+	if idle == &"burrow" and state == State.DORMANT:
+		# Burst out of the mound, then hunt.
+		_set_mound(false)
+		state = State.EMERGE
+		_state_t = 0.0
+		_entrance_alerted = true
+		visual.scale = Vector3.ONE * 0.1
+		visual.position.y = -0.4
+		if Game.fx:
+			Game.fx.burst(global_position + Vector3.UP * 0.2, Vector3.UP, 0.7)
+	else:
+		state = State.CHASE
+	idle = &"sleep"
 	if was_unaware:
 		_on_alerted()
 		if scream and Game.director:
@@ -365,7 +417,8 @@ func _can_see_player() -> bool:
 	var dist := to.length()
 	var sight_mult := 1.0 - p.stealth
 	if state == State.DORMANT:
-		if dist > sleep_sight_range * sight_mult:
+		var r := burrow_sense_range if idle == &"burrow" else sleep_sight_range
+		if dist > r * sight_mult:
 			return false
 	else:
 		if dist > sight_range * sight_mult:
@@ -404,8 +457,7 @@ func _physics_process(delta: float) -> void:
 		return
 	match state:
 		State.DORMANT:
-			_settle(delta)
-			visual.position.y = sin(_state_t * 2.0 + _phase) * 0.02
+			_tick_idle(delta)
 			_tick_senses(delta)
 		State.PATROL:
 			_tick_patrol(delta)
@@ -428,6 +480,28 @@ func _tick_patrol(delta: float) -> void:
 		_wait -= delta
 		_settle(delta)
 		return
+	if not _route.is_empty():
+		# Roaming pack: walk the route through the doorways, pause at each stop.
+		var wp := _route[_route_i]
+		_steer(wp, speed * patrol_speed, delta, true)
+		if Vector2(wp.x - global_position.x, wp.z - global_position.z).length() < 1.6:
+			_route_i = (_route_i + 1) % _route.size()
+			_wait = randf_range(0.6, 2.0)
+		return
+	if _wander_r > 0.0:
+		# Milling about: short slow walks to random nearby spots, with pauses.
+		_idle_t -= delta
+		if _wander_to == Vector3.INF or _idle_t <= 0.0:
+			_wander_to = _pick_wander_point(_home, _wander_r)
+			_idle_t = randf_range(2.5, 5.0)
+		var d := Vector2(_wander_to.x - global_position.x, _wander_to.z - global_position.z).length()
+		if d < 0.5:
+			_wander_to = Vector3.INF
+			_wait = randf_range(1.0, 3.5)
+			_settle(delta)
+			return
+		_steer(_wander_to, speed * wander_speed, delta, false)
+		return
 	var target := _patrol_to if _patrol_forward else _home
 	_steer(target, speed * patrol_speed, delta, false)
 	if Vector2(target.x - global_position.x, target.z - global_position.z).length() < 0.8:
@@ -443,8 +517,13 @@ func _tick_investigate(delta: float) -> void:
 	_settle(delta)
 	_wait += delta
 	if _wait > 2.5:
-		state = State.DORMANT
+		# Lost interest: mill about here.
+		state = State.PATROL
 		_home = global_position
+		idle = &"wander"
+		_wander_r = 2.5
+		_wander_to = Vector3.INF
+		_route.clear()
 
 
 func _tick_emerge() -> void:
@@ -511,7 +590,7 @@ func _tick_chase(delta: float) -> void:
 func _steer(goal: Vector3, move_speed: float, delta: float, use_nav: bool) -> void:
 	var g := goal
 	if use_nav and Game.level:
-		g = Game.level.get_nav_target(global_position, goal)
+		g = Game.level.get_nav_target(global_position, goal, get_hit_radius())
 	var to := g - global_position
 	to.y = 0.0
 	var dir := to.normalized() if to.length_squared() > 0.01 else Vector3.ZERO
@@ -525,7 +604,7 @@ func _steer(goal: Vector3, move_speed: float, delta: float, use_nav: bool) -> vo
 		if _detour_t > 0.0:
 			dir = (dir * 0.25 + _detour).normalized()
 	var desired := dir * move_speed * _speed_factor(dir) * (0.5 if _cryo_t > 0.0 else 1.0)
-	if state == State.CHASE:
+	if state == State.CHASE or not _route.is_empty():
 		desired += _sep
 	_move_vel = _move_vel.move_toward(desired, acceleration * delta)
 	velocity = _move_vel + _knock
@@ -636,6 +715,121 @@ func _die(direction: Vector3, kind: StringName) -> void:
 		spawner.release(self)
 	else:
 		deactivate()
+
+
+# ==========================================================================
+# Idle life (unaware bugs)
+# ==========================================================================
+
+func _tick_idle(delta: float) -> void:
+	match idle:
+		&"feed":
+			# Heads down over the carcass, pecking; now and then shuffle round it.
+			_idle_t -= delta
+			if _idle_t <= 0.0:
+				_idle_t = randf_range(2.5, 6.0)
+				var ang := atan2(global_position.z - _food.z, global_position.x - _food.x) + randf_range(-0.9, 0.9)
+				var r := randf_range(0.9, 1.4) * _tier_scale
+				_wander_to = _food + Vector3(cos(ang) * r, 0.0, sin(ang) * r)
+			if _wander_to != Vector3.INF and Vector2(_wander_to.x - global_position.x, _wander_to.z - global_position.z).length() > 0.15:
+				_steer(_wander_to, speed * 0.16, delta, false)
+			else:
+				_wander_to = Vector3.INF
+				_settle(delta)
+			_face_dir(_food - global_position, delta)
+			var peck := maxf(sin(_state_t * 7.0 + _phase), 0.0)
+			visual.rotation.x = -0.25 - 0.3 * peck
+			visual.position.y = -0.04 * peck
+		&"burrow":
+			_settle(delta)
+			if _mound:
+				_mound.scale = Vector3(1.0, 1.0 + 0.1 * sin(_state_t * 1.7 + _phase), 1.0) * _tier_scale
+		_:
+			# Asleep: breathing, and the odd twitch.
+			_settle(delta)
+			visual.position.y = sin(_state_t * 2.0 + _phase) * 0.02
+			visual.scale = Vector3.ONE * _tier_scale * (1.0 + 0.035 * sin(_state_t * 1.8 + _phase))
+			_idle_t -= delta
+			if _idle_t <= 0.0:
+				_idle_t = randf_range(3.0, 7.0)
+				visual.rotation.y += randf_range(-0.5, 0.5)
+
+
+## Random walkable spot near `center`, inside the same convex region (so a
+## straight walk gets there). Falls back to `center`.
+func _pick_wander_point(center: Vector3, radius: float) -> Vector3:
+	var lvl := Game.level
+	if lvl == null:
+		return center
+	var home_r := lvl.region_of(center)
+	for attempt in 8:
+		var a := randf() * TAU
+		var r := sqrt(randf()) * radius
+		var q := Vector3(center.x + cos(a) * r, 0.0, center.z + sin(a) * r)
+		if lvl.region_of(q) == home_r and not lvl.is_blocked(q, 0.4):
+			return q
+	return center
+
+
+func _reset_pose() -> void:
+	visual.rotation.x = 0.0
+	visual.position.y = 0.0
+	visual.scale = Vector3.ONE * _tier_scale
+
+
+## Burrowed: the bug is hidden and a breathing hive mound sits in its place.
+func _set_mound(on: bool) -> void:
+	if _mound:
+		_mound.visible = on
+	visual.visible = not on
+
+
+func _build_mound() -> void:
+	if _mound_mat == null:
+		_mound_mat = StandardMaterial3D.new()
+		_mound_mat.albedo_color = Color("26281d")
+		_mound_mat.roughness = 0.9
+		_mound_glow = StandardMaterial3D.new()
+		_mound_glow.albedo_color = Color(0.05, 0.08, 0.02)
+		_mound_glow.emission_enabled = true
+		_mound_glow.emission = Color("8dff2e")
+		_mound_glow.emission_energy_multiplier = 1.6
+	_mound = Node3D.new()
+	_mound.name = "Mound"
+	var dome := MeshInstance3D.new()
+	var sm := SphereMesh.new()
+	sm.radius = 0.62
+	sm.height = 0.5
+	sm.radial_segments = 12
+	sm.rings = 6
+	dome.mesh = sm
+	dome.material_override = _mound_mat
+	dome.position.y = 0.02
+	_mound.add_child(dome)
+	# Glowing cracks on top.
+	for i in 3:
+		var crack := MeshInstance3D.new()
+		var bm := BoxMesh.new()
+		bm.size = Vector3(0.5, 0.03, 0.05)
+		crack.mesh = bm
+		crack.material_override = _mound_glow
+		crack.position = Vector3(0.0, 0.2, 0.0)
+		crack.rotation.y = i * PI / 3.0 + 0.3
+		_mound.add_child(crack)
+	for i in 4:
+		var clod := MeshInstance3D.new()
+		var cm := SphereMesh.new()
+		cm.radius = 0.14
+		cm.height = 0.16
+		cm.radial_segments = 6
+		cm.rings = 3
+		clod.mesh = cm
+		clod.material_override = _mound_mat
+		var a := i * TAU / 4.0 + 0.4
+		clod.position = Vector3(cos(a) * 0.62, 0.03, sin(a) * 0.62)
+		_mound.add_child(clod)
+	_mound.visible = false
+	add_child(_mound)
 
 
 # ==========================================================================
