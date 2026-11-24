@@ -229,6 +229,8 @@ scripts/
   level/         level.gd (builds a floor, region-graph nav, spawn queries), complex_gen.gd (generated floors,
                  room purposes), level_kit.gd (deck/rail/truss builders, batched into MultiMeshes),
                  props.gd (prop catalogue: footprints, collision)
+  player/        hunter_body.gd (the hunter's animated body: clips by move direction, aimed upper
+                 body, swing/roll/hit/death one-shots, weapons, dash ghosts, rim glow)
   enemies/       enemy.gd (base: stealth states, senses, entrances, tiers) + special types
   objects/       interactable, explosive_barrel, hive_nest, laser_grid, blast_door, extraction_lift, training_dummy
   items/         loot.gd (item tables, generation, tooltips), player_stats.gd, perks.gd, loot_drop.gd
@@ -259,6 +261,7 @@ reference/       concept art (ignored by the importer via .gdignore)
 | Mission | uplink duration and zone radius, lift countdown, elite timing, XP and drop chance by tier |
 | Spawner | pool sizes, max alive, spawn warning times, swarm separation |
 | Enemy scenes | health, speed, damage, senses (sight range and cone), shield arc, burst radius, beam timing |
+| HunterBody (`scripts/player/hunter_body.gd`) | clip speeds, swing/roll/hit timing, weapon size and grip, material and rim-glow tuning, hero scale |
 | FX | hitstop, shake, damage numbers, VFX registry and pool sizes, which gun uses which muzzle effect |
 | `scenes/vfx/profiles/*.tres` | per-effect colour, intensity, scale, particle count, light, camera feedback (shake, kick, hitstop, distance falloff) |
 | Level | lamp colours per room, hive glow, void fog |

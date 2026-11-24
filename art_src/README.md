@@ -67,3 +67,7 @@ Some models start as AI image-to-3D output instead of a script. These are the ex
   first rig by bone name (each bone's armature-space rotation from rest, hips scaled by height),
   so all clips share one skin. To add a clip: generate it on the same model, save it as
   `SRC_DIR/clips/<name>.glb`, add it to `LOOPS` or `IN_PLACE` if needed, and rerun.
+- `DERIVED` in the script cuts game-speed pieces out of library clips (`swing_1..3` from the
+  combo, `roll_fast`, `hit_quick`, `death_fall`) and mirrors `strafe_left` into `strafe_right`.
+- In game she is `scripts/player/hunter_body.gd`, created by `player.gd` (`use_hunter`; off
+  brings back the old placeholder body).

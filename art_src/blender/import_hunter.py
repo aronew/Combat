@@ -35,6 +35,20 @@ LOOPS = {"idle", "run_forward", "run_back_left", "run_back_right", "strafe_left"
 # clips whose sideways hip travel is removed: the game moves the character itself (the roll's
 # distance, the lunge of a swing), so the body must stay over the collision capsule
 IN_PLACE = {"roll", "sword_combo", "sword_parry", "hit", "reload"}
+# clips cut from (or mirrored from) a downloaded clip: name -> (source, start s, end s, mirror).
+# The game's swings and roll are much faster than the library moves, so it plays just the
+# strike or the tumble, sped up. Times come from the right hand's speed peaks (swings) and the
+# hips' dip (roll, death).
+DERIVED = {
+    "strafe_right": ("strafe_left", None, None, True),
+    "swing_1": ("sword_combo", 0.50, 0.98, False),
+    "swing_2": ("sword_combo", 1.27, 1.75, False),
+    "swing_3": ("sword_combo", 2.02, 2.50, False),
+    "roll_fast": ("roll", 0.85, 1.83, False),
+    "hit_quick": ("hit", 0.0, 0.6, False),
+    "death_fall": ("death", 1.3, 3.5, False),
+}
+LOOPS |= {"strafe_right"}
 
 
 def args():
@@ -86,9 +100,19 @@ def frame_range(arm):
     return int(round(act.frame_range[0])), int(round(act.frame_range[1]))
 
 
-def retarget(master, clip_arm, name):
-    """Bakes clip_arm's animation onto master as a new action called name."""
+def mirrored(name):
+    if "Left" in name:
+        return name.replace("Left", "Right")
+    return name.replace("Right", "Left")
+
+
+def retarget(master, clip_arm, name, start=None, end=None, mirror=False, in_place=None):
+    """Bakes clip_arm's animation (or the start..end seconds of it) onto master as action `name`.
+    mirror swaps left and right (the rig is symmetric across armature X)."""
     sc = bpy.context.scene
+    fps = sc.render.fps / sc.render.fps_base
+    if in_place is None:
+        in_place = name in IN_PLACE
     m_rest, c_rest = rest_rot(master), rest_rot(clip_arm)
     bones = order(master)
     hips = bones[0].name
@@ -96,6 +120,8 @@ def retarget(master, clip_arm, name):
     c_head = clip_arm.data.bones[hips].head_local.copy()
     ratio = m_head.z / c_head.z
     f0, f1 = frame_range(clip_arm)
+    if start is not None:
+        f0, f1 = f0 + int(round(start * fps)), min(f1, f0 + int(round(end * fps)))
 
     act = bpy.data.actions.new(name)
     master.animation_data_create()
@@ -108,6 +134,9 @@ def retarget(master, clip_arm, name):
         # armature-space rotation of every clip bone, as a delta from its rest
         delta = {b.name: clip_arm.pose.bones[b.name].matrix.to_quaternion() @ c_rest[b.name].inverted()
                  for b in bones}
+        if mirror:  # reflect across the X = 0 plane: q(w, x, y, z) -> q(w, x, -y, -z), sides swapped
+            delta = {n: Quaternion((q.w, q.x, -q.y, -q.z)) for n, q in
+                     ((b.name, delta[mirrored(b.name)]) for b in bones)}
         world = {}
         for b in bones:
             w = delta[b.name] @ m_rest[b.name]  # target armature-space rotation on the master
@@ -122,7 +151,9 @@ def retarget(master, clip_arm, name):
             pb.keyframe_insert("rotation_quaternion", frame=f - f0)
         # hips: same travel, scaled to the master's proportions
         travel = (clip_arm.pose.bones[hips].head - c_head) * ratio
-        if name in IN_PLACE:
+        if mirror:
+            travel.x = -travel.x
+        if in_place:
             travel.x = travel.y = 0.0  # armature space is Z-up: keep only the vertical motion
         target = m_head + travel
         pb = master.pose.bones[hips]
@@ -183,6 +214,9 @@ def build_hunter(src):
     for name in names:
         new = import_glb(os.path.join(clip_dir, name + ".glb"))
         retarget(master, armature_of(new), name)
+        for d, (source, start, end, mirror) in DERIVED.items():
+            if source == name:
+                retarget(master, armature_of(new), d, start, end, mirror, name in IN_PLACE)
         for o in new:
             bpy.data.objects.remove(o, do_unlink=True)
         for a in list(bpy.data.actions):
