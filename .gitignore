@@ -7,3 +7,4 @@ export_presets.cfg
 *.tmp
 # local screenshot dumps from --autoplay
 /screenshots/
+__pycache__/
