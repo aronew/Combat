@@ -70,9 +70,15 @@ var _dead := false
 var _ghosts: Array[Node3D] = []
 var _ghost_index := 0
 var _pose: Array[Transform3D] = []
+## True once the model, animation tree and weapons are all set up. The player falls back to
+## the old body if this is still false after adding it (a missing or broken import).
+var ok := false
 
 
 func _ready() -> void:
+	if MODEL == null or RIFLE == null or BLADE == null:
+		push_error("HunterBody: hunter models failed to load (check assets/models/hunter imports)")
+		return
 	_model = MODEL.instantiate()
 	_model.rotation.y = PI  # the model faces +Z; the player faces -Z
 	_model.scale = Vector3.ONE * body_scale
@@ -86,6 +92,7 @@ func _ready() -> void:
 	_tune_materials(blade)
 	_add_rim_light()
 	set_rifle_mode(true)
+	ok = skeleton != null and tree != null and rifle != null and blade != null
 
 
 # --------------------------------------------------------------------------

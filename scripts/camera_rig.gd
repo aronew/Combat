@@ -91,10 +91,18 @@ func _process(delta: float) -> void:
 		_ahead = _ahead.lerp(lean, 1.0 - exp(-look_ahead_smoothing * delta))
 		var goal := _target.global_position + _ahead
 		_focus = _focus.lerp(goal, 1.0 - exp(-follow_smoothing * delta))
-	# Kick runs on real time like shake, so it still settles during hitstop.
-	_kick_v += (-_kick * kick_stiffness - _kick_v * kick_damping) * real_dt
-	_kick += _kick_v * real_dt
+	# Kick runs on real time like shake, so it still settles during hitstop. The spring is
+	# stepped in small fixed slices: one big step at a low frame rate overshoots and the
+	# camera rattles back and forth (it diverged below ~15 FPS).
+	var left := real_dt
+	while left > 0.0:
+		var h := minf(left, 1.0 / 240.0)
+		_kick_v += (-_kick * kick_stiffness - _kick_v * kick_damping) * h
+		_kick += _kick_v * h
+		left -= h
 	_kick = _kick.limit_length(0.8)
+	if _kick.length() >= 0.8:
+		_kick_v = _kick_v.limit_length(4.0)
 	global_position = _focus + _kick
 
 	trauma = maxf(trauma - shake_decay * real_dt, 0.0)

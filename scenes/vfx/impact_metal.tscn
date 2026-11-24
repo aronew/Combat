@@ -118,35 +118,35 @@ color_ramp = SubResource("GradientTexture1D_olvqo")
 [sub_resource type="QuadMesh" id="QuadMesh_3dw2e"]
 size = Vector2(0.45, 0.45)
 
-[node name="ImpactMetal" type="Node3D" unique_id=650140307]
+[node name="ImpactMetal" type="Node3D" unique_id=1546791974]
 script = ExtResource("1_bsqqn")
 duration = 0.6
 profile = ExtResource("2_2diog")
 
-[node name="Flash" type="MeshInstance3D" parent="." unique_id=781001353]
+[node name="Flash" type="MeshInstance3D" parent="." unique_id=646928948]
 material_override = SubResource("ShaderMaterial_25wcd")
 cast_shadow = 0
 mesh = SubResource("QuadMesh_cw26g")
 metadata/keep_color = true
 
-[node name="Pulse" type="Node" parent="Flash" unique_id=772988661]
+[node name="Pulse" type="Node" parent="Flash" unique_id=344059831]
 script = ExtResource("4_tk85g")
 life = 0.05
 scale_to = Vector3(0.4, 0.4, 0.4)
 ease_power = 1.5
 
-[node name="Star" type="MeshInstance3D" parent="." unique_id=1331138469]
+[node name="Star" type="MeshInstance3D" parent="." unique_id=234351764]
 material_override = SubResource("ShaderMaterial_m1yct")
 cast_shadow = 0
 mesh = SubResource("QuadMesh_5maa6")
 
-[node name="Pulse" type="Node" parent="Star" unique_id=2065764138]
+[node name="Pulse" type="Node" parent="Star" unique_id=1609986853]
 script = ExtResource("4_tk85g")
 life = 0.04
 scale_to = Vector3(0.5, 0.5, 0.5)
 random_spin = true
 
-[node name="Sparks" type="GPUParticles3D" parent="." unique_id=266287576]
+[node name="Sparks" type="GPUParticles3D" parent="." unique_id=119869746]
 material_override = SubResource("ShaderMaterial_0jvnd")
 cast_shadow = 0
 emitting = false
@@ -161,7 +161,7 @@ process_material = SubResource("ParticleProcessMaterial_f5rhq")
 draw_pass_1 = SubResource("QuadMesh_ryfpg")
 metadata/keep_color = true
 
-[node name="Smoke" type="GPUParticles3D" parent="." unique_id=457095520]
+[node name="Smoke" type="GPUParticles3D" parent="." unique_id=745367992]
 material_override = SubResource("ShaderMaterial_ojkl0")
 cast_shadow = 0
 emitting = false
@@ -175,12 +175,12 @@ process_material = SubResource("ParticleProcessMaterial_tm047")
 draw_pass_1 = SubResource("QuadMesh_3dw2e")
 metadata/keep_color = true
 
-[node name="Light" type="OmniLight3D" parent="." unique_id=393936566]
+[node name="Light" type="OmniLight3D" parent="." unique_id=407920772]
 light_color = Color(1, 0.7, 0.35, 1)
 light_energy = 0.0
 omni_range = 3.0
 
-[node name="Pulse" type="Node" parent="Light" unique_id=1249422513]
+[node name="Pulse" type="Node" parent="Light" unique_id=978204243]
 script = ExtResource("4_tk85g")
 life = 0.05
 ease_power = 1.0

@@ -242,10 +242,15 @@ func _ready() -> void:
 		body = HunterBody.new()
 		body.name = "Hunter"
 		visual.add_child(body)
-		for part in PLACEHOLDER_PARTS:
-			var n := visual.get_node_or_null(part) as Node3D
-			if n:
-				n.visible = false
+		if body.ok:
+			for part in PLACEHOLDER_PARTS:
+				var n := visual.get_node_or_null(part) as Node3D
+				if n:
+					n.visible = false
+		else:
+			push_error("Player: the hunter body failed to set up; using the placeholder body")
+			body.queue_free()
+			body = null
 	_build_ghosts()
 	_build_blade()
 	_setup_body_rig()

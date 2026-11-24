@@ -359,13 +359,13 @@ func _build_impact_environment() -> void:
 # ==========================================================================
 
 func _build_grenade_explosion() -> void:
-	var prof := _profile("grenade_explosion", Color(1, 0.75, 0.45), _feedback(0.5, 0.32, 0.045, 4.0, 26.0))
+	var prof := _profile("grenade_explosion", Color(1, 0.75, 0.45), _feedback(0.36, 0.18, 0.04, 3.0, 22.0))
 	var r := _root("GrenadeExplosion", 2.2, prof)
 	var up := Vector3(0, 1, 0)
 	# 1. A blinding core flash: the moment of detonation.
-	_pulse_mesh(r, "CoreFlash", _quad(Vector2(3.4, 3.4)), _mat(true, Shape.FLARE, 3.5), {"life": 0.09, "scale_from": Vector3.ONE * 0.6, "scale_to": Vector3.ONE * 1.3, "ease_power": 1.6}, {"keep_color": true})
+	_pulse_mesh(r, "CoreFlash", _quad(Vector2(3.0, 3.0)), _mat(true, Shape.FLARE, 2.0), {"life": 0.09, "scale_from": Vector3.ONE * 0.6, "scale_to": Vector3.ONE * 1.3, "ease_power": 1.6}, {"keep_color": true})
 	# 2. Fireball: puffs that bloom outward, burn from white to red and erode away.
-	_emitter(r, "Fireball", _quad(Vector2(1.0, 1.0)), _mat(true, Shape.PUFF, 1.5, true, {"erosion": 0.9, "noise_scale": 2.2, "priority": 1}), 18, 0.75, {
+	_emitter(r, "Fireball", _quad(Vector2(1.0, 1.0)), _mat(true, Shape.PUFF, 1.15, true, {"erosion": 0.9, "noise_scale": 2.2, "priority": 1}), 18, 0.75, {
 		"direction": up, "spread": 180.0, "vel": Vector2(2.5, 6), "damping": Vector2(4, 6), "gravity": Vector3(0, 1.5, 0),
 		"sphere": 0.5, "scale": Vector2(1.4, 2.4), "scale_curve": _curve([[0.0, 0.5], [0.25, 1.0], [1.0, 1.3]]),
 		"angle": Vector2(0, 360), "keep_color": true, "lifetime_rand": 0.35, "explosiveness": 0.95,
@@ -391,12 +391,12 @@ func _build_grenade_explosion() -> void:
 		"direction": up, "spread": 65.0, "vel": Vector2(6, 12), "gravity": Vector3(0, -24, 0), "scale": Vector2(0.6, 1.4),
 		"angular": Vector2(-600, 600), "keep_color": true})
 	# 6. Ground shockwave ring and a dust skirt racing outward on the floor.
-	_pulse_mesh(r, "Shockwave", _plane(Vector2(1, 1)), _mat(true, Shape.RING, 2.5, false, {"ring_width": 0.08}), {"life": 0.32, "scale_from": Vector3(1, 1, 1), "scale_to": Vector3(9, 1, 9), "ease_power": 2.2}, {"keep_color": false, "ground": true})
+	_pulse_mesh(r, "Shockwave", _plane(Vector2(1, 1)), _mat(true, Shape.RING, 1.8, false, {"ring_width": 0.08}), {"life": 0.32, "scale_from": Vector3(1, 1, 1), "scale_to": Vector3(9, 1, 9), "ease_power": 2.2}, {"keep_color": false, "ground": true})
 	_emitter(r, "DustSkirt", _quad(Vector2(0.9, 0.9)), _mat(false, Shape.PUFF, 1.0, true, {"erosion": 0.7}), 20, 1.0, {
 		"direction": Vector3(1, 0, 0), "spread": 180.0, "flat": true, "vel": Vector2(5, 9), "damping": Vector2(5, 7),
 		"gravity": Vector3(0, 0.3, 0), "box": Vector3(0.6, 0.05, 0.6), "scale_curve": _curve([[0.0, 0.6], [1.0, 2.0]]),
 		"angle": Vector2(0, 360), "keep_color": true, "ground": true,
 		"color": _grad([[0.0, Color(0.45, 0.4, 0.35, 0.5)], [1.0, Color(0.45, 0.4, 0.35, 0)]])})
 	# 7. Light: a hard orange pop that dies fast.
-	_light(r, "Light", Color(1, 0.6, 0.25), 10.0, 13.0, 0.45, Vector3(0, 1.0, 0))
+	_light(r, "Light", Color(1, 0.6, 0.25), 5.0, 11.0, 0.4, Vector3(0, 1.0, 0))
 	_save(r)

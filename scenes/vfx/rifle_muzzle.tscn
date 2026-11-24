@@ -168,72 +168,72 @@ color_ramp = SubResource("GradientTexture1D_jyirr")
 [sub_resource type="QuadMesh" id="QuadMesh_s0t0a"]
 size = Vector2(0.5, 0.5)
 
-[node name="RifleMuzzle" type="Node3D" unique_id=1688250745]
+[node name="RifleMuzzle" type="Node3D" unique_id=854269771]
 script = ExtResource("1_y2ioo")
 duration = 0.6
 profile = ExtResource("2_j8d28")
 
-[node name="Core" type="MeshInstance3D" parent="." unique_id=60755017]
+[node name="Core" type="MeshInstance3D" parent="." unique_id=1867407092]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.12)
 material_override = SubResource("ShaderMaterial_4rkgw")
 cast_shadow = 0
 mesh = SubResource("QuadMesh_f8j7n")
 
-[node name="Pulse" type="Node" parent="Core" unique_id=2124088834]
+[node name="Pulse" type="Node" parent="Core" unique_id=111860187]
 script = ExtResource("4_i0xdf")
 life = 0.05
 scale_from = Vector3(1.3, 1.3, 1.3)
 scale_to = Vector3(0.5, 0.5, 0.5)
 ease_power = 1.5
 
-[node name="Star" type="MeshInstance3D" parent="." unique_id=1200111954]
+[node name="Star" type="MeshInstance3D" parent="." unique_id=853409445]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.2)
 material_override = SubResource("ShaderMaterial_vy8v6")
 cast_shadow = 0
 mesh = SubResource("QuadMesh_k0dqv")
 
-[node name="Pulse" type="Node" parent="Star" unique_id=1979178506]
+[node name="Pulse" type="Node" parent="Star" unique_id=1978389571]
 script = ExtResource("4_i0xdf")
 life = 0.045
 scale_to = Vector3(0.6, 0.6, 0.6)
 random_spin = true
 
-[node name="Plume" type="MeshInstance3D" parent="." unique_id=243491067]
+[node name="Plume" type="MeshInstance3D" parent="." unique_id=1023871615]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.62)
 material_override = SubResource("ShaderMaterial_wmq4a")
 cast_shadow = 0
 mesh = SubResource("PlaneMesh_3iwjy")
 
-[node name="Pulse" type="Node" parent="Plume" unique_id=1661648882]
+[node name="Pulse" type="Node" parent="Plume" unique_id=1856924466]
 script = ExtResource("4_i0xdf")
 life = 0.05
 scale_from = Vector3(1, 1, 0.6)
 scale_to = Vector3(1, 1, 1.3)
 ease_power = 1.8
 
-[node name="BrakeL" type="MeshInstance3D" parent="." unique_id=1656330668]
+[node name="BrakeL" type="MeshInstance3D" parent="." unique_id=1532600336]
 transform = Transform3D(0.62161, 0, 0.7833269, 0, 1, 0, -0.7833269, 0, 0.62161, -0.13, 0, -0.26)
 material_override = SubResource("ShaderMaterial_ajfmk")
 cast_shadow = 0
 mesh = SubResource("PlaneMesh_gk622")
 
-[node name="Pulse" type="Node" parent="BrakeL" unique_id=1947491731]
+[node name="Pulse" type="Node" parent="BrakeL" unique_id=1026212]
 script = ExtResource("4_i0xdf")
 life = 0.04
 scale_to = Vector3(1, 1, 1.4)
 
-[node name="BrakeR" type="MeshInstance3D" parent="." unique_id=993805378]
+[node name="BrakeR" type="MeshInstance3D" parent="." unique_id=1749452986]
 transform = Transform3D(0.62161, 0, -0.7833269, 0, 1, 0, 0.7833269, 0, 0.62161, 0.13, 0, -0.26)
 material_override = SubResource("ShaderMaterial_qtf03")
 cast_shadow = 0
 mesh = SubResource("PlaneMesh_1isjl")
 
-[node name="Pulse" type="Node" parent="BrakeR" unique_id=1775386915]
+[node name="Pulse" type="Node" parent="BrakeR" unique_id=880664184]
 script = ExtResource("4_i0xdf")
 life = 0.04
 scale_to = Vector3(1, 1, 1.4)
 
-[node name="Sparks" type="GPUParticles3D" parent="." unique_id=344098398]
+[node name="Sparks" type="GPUParticles3D" parent="." unique_id=998106974]
 material_override = SubResource("ShaderMaterial_pemfa")
 cast_shadow = 0
 emitting = false
@@ -247,7 +247,7 @@ transform_align = 3
 process_material = SubResource("ParticleProcessMaterial_ugoib")
 draw_pass_1 = SubResource("QuadMesh_sxllg")
 
-[node name="Smoke" type="GPUParticles3D" parent="." unique_id=187780903]
+[node name="Smoke" type="GPUParticles3D" parent="." unique_id=310492397]
 material_override = SubResource("ShaderMaterial_bkmiq")
 cast_shadow = 0
 emitting = false
@@ -261,11 +261,11 @@ process_material = SubResource("ParticleProcessMaterial_ji3r1")
 draw_pass_1 = SubResource("QuadMesh_s0t0a")
 metadata/keep_color = true
 
-[node name="Light" type="OmniLight3D" parent="." unique_id=2090289199]
+[node name="Light" type="OmniLight3D" parent="." unique_id=1030431828]
 light_color = Color(0.6, 0.95, 1, 1)
 light_energy = 0.0
 
-[node name="Pulse" type="Node" parent="Light" unique_id=21922769]
+[node name="Pulse" type="Node" parent="Light" unique_id=1595496785]
 script = ExtResource("4_i0xdf")
 life = 0.06
 ease_power = 1.0
