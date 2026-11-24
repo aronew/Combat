@@ -5,9 +5,9 @@ extends Node3D
 
 @export var duration := 0.7
 @export var flash_time := 0.12
-@export var flash_size := 1.9
+@export var flash_size := 1.5
 @export var ring_time := 0.32
-@export var ring_size := 3.4
+@export var ring_size := 2.8
 
 @onready var sparks: CPUParticles3D = $Sparks
 @onready var chunks: CPUParticles3D = $Chunks
@@ -60,5 +60,6 @@ func _update_visuals() -> void:
 	_flash_mat.set_shader_parameter("fade", 1.0 - ft)
 	var rt := clampf(_t / ring_time, 0.0, 1.0)
 	ring.visible = rt < 1.0
-	ring.scale = Vector3.ONE * lerpf(0.2, ring_size, 1.0 - pow(1.0 - rt, 2.5)) * _size
+	var rs := lerpf(0.2, ring_size, 1.0 - pow(1.0 - rt, 2.5)) * _size
+	ring.scale = Vector3(rs, 0.25, rs)
 	_ring_mat.set_shader_parameter("fade", 1.0 - rt)

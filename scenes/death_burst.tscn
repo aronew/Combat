@@ -7,12 +7,12 @@
 [sub_resource type="ShaderMaterial" id="Mat_spark"]
 render_priority = 3
 shader = ExtResource("2_neon")
-shader_parameter/energy = 5.5
+shader_parameter/energy = 2.6
 
 [sub_resource type="ShaderMaterial" id="Mat_chunk"]
 render_priority = 3
 shader = ExtResource("2_neon")
-shader_parameter/energy = 3.5
+shader_parameter/energy = 2.0
 
 [sub_resource type="BoxMesh" id="Mesh_streak"]
 size = Vector3(0.07, 0.38, 0.07)
@@ -26,7 +26,7 @@ rings = 3
 [sub_resource type="Gradient" id="Grad_neon"]
 interpolation_mode = 1
 offsets = PackedFloat32Array(0, 0.34, 0.67)
-colors = PackedColorArray(1, 0.17, 0.84, 1, 0.62, 1, 0.18, 1, 1, 0.89, 0.24, 1)
+colors = PackedColorArray(1, 0.08, 0.78, 1, 0.5, 1, 0.08, 1, 1, 0.85, 0.08, 1)
 
 [sub_resource type="Gradient" id="Grad_fade"]
 offsets = PackedFloat32Array(0, 0.55, 1)
@@ -37,7 +37,7 @@ resource_local_to_scene = true
 render_priority = 4
 shader = ExtResource("3_fade")
 shader_parameter/tint = Color(1, 0.96, 0.85, 1)
-shader_parameter/energy = 5.0
+shader_parameter/energy = 2.0
 shader_parameter/fade = 1.0
 shader_parameter/edge_softness = 0.8
 
@@ -46,7 +46,7 @@ resource_local_to_scene = true
 render_priority = 2
 shader = ExtResource("3_fade")
 shader_parameter/tint = Color(1, 0.17, 0.84, 1)
-shader_parameter/energy = 4.0
+shader_parameter/energy = 2.5
 shader_parameter/fade = 1.0
 shader_parameter/edge_softness = 0.0
 
@@ -69,7 +69,7 @@ script = ExtResource("1_burst")
 material_override = SubResource("Mat_spark")
 cast_shadow = 0
 emitting = false
-amount = 42
+amount = 56
 lifetime = 0.6
 one_shot = true
 explosiveness = 1.0

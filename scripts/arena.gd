@@ -23,15 +23,15 @@ extends Node3D
 @export_group("Lamps")
 @export var lamp_spacing := 8.0
 @export var lamp_color := Color("ffae45")
-@export var lamp_energy := 2.4
-@export var lamp_range := 6.5
-@export var lamp_emission := 7.0
+@export var lamp_energy := 3.2
+@export var lamp_range := 7.0
+@export var lamp_emission := 6.0
 @export var lamp_shadows := false
 
 @export_group("Hive")
 @export var hive_center := Vector3(13.4, 0.0, -8.3)
-@export var hive_glow := 4.5
-@export var hive_light_energy := 5.0
+@export var hive_glow := 1.1
+@export var hive_light_energy := 1.6
 @export var hive_light_range := 11.0
 
 @export_group("Crates")
@@ -47,10 +47,10 @@ extends Node3D
 ])
 
 @export_group("Void")
-@export var void_fog_density := 0.05
-@export var void_fog_top := -2.0
-@export var void_fog_albedo := Color("2fb3a6")
-@export var void_fog_emission := Color("0e5a52")
+@export var void_fog_density := 0.04
+@export var void_fog_top := -2.5
+@export var void_fog_albedo := Color("b4dcd8")
+@export var void_fog_emission := Color("127078")
 @export var pillar_strip_energy := 3.5
 
 ## Side platforms reached by narrow catwalk bridges.
@@ -252,8 +252,8 @@ func _make_materials() -> void:
 	_mats.crate = _std(Color("9aa2a8"), 0.25, 0.55)
 	_mats.crate_dark = _std(Color("40474e"), 0.5, 0.5)
 	_mats.crate_orange = _std(Color("d9662a"), 0.1, 0.6)
-	_mats.hive_flesh = _std(Color("1a2410"), 0.0, 0.35, Color("8dff2e"), 0.25)
-	_mats.hive_pod = _std(Color("8dff2e"), 0.0, 0.25, Color("8dff2e"), hive_glow)
+	_mats.hive_flesh = _std(Color("1a2410"), 0.0, 0.35, Color("8dff2e"), 0.12)
+	_mats.hive_pod = _std(Color("4f9a12"), 0.0, 0.25, Color("8dff2e"), hive_glow)
 	_mats.hive_root = _std(Color("10160a"), 0.0, 0.6, Color("4d8f16"), 0.4)
 	_mats.machine = _std(Color("8a9297"), 0.35, 0.5)
 	_mats.teal_strip = _std(Color("0a1514"), 0.0, 0.5, Color("7ff5e8"), pillar_strip_energy)
@@ -481,7 +481,7 @@ func _lamp(pos: Vector3, inward: Vector3) -> void:
 	light.light_energy = lamp_energy
 	light.omni_range = lamp_range
 	light.omni_attenuation = 1.3
-	light.light_volumetric_fog_energy = 2.0
+	light.light_volumetric_fog_energy = 1.5
 	light.shadow_enabled = lamp_shadows
 	light.position = pos + inward * 0.35 + Vector3(0, 1.7, 0)
 	_root.add_child(light)
@@ -534,13 +534,13 @@ func _build_hive() -> void:
 		var size := rng.randf_range(0.22, 0.55)
 		var pos := c + Vector3(cos(ang) * r, 0.35 + size * 0.5, sin(ang) * r * 0.85)
 		_sphere(size, pos, _mats.hive_pod, Vector3(1.0, 1.3, 1.0))
-	_sphere(0.85, c + Vector3(0.3, 1.0, -0.4), _mats.hive_pod, Vector3(1.0, 1.35, 1.0))
+	_sphere(0.6, c + Vector3(0.4, 0.8, -0.6), _mats.hive_pod, Vector3(1.0, 1.35, 1.0))
 
 	var light := OmniLight3D.new()
 	light.light_color = Color("8dff2e")
 	light.light_energy = hive_light_energy
 	light.omni_range = hive_light_range
-	light.light_volumetric_fog_energy = 2.5
+	light.light_volumetric_fog_energy = 0.6
 	light.position = c + Vector3(-1.0, 2.0, 1.0)
 	_root.add_child(light)
 

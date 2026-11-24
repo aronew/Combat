@@ -5,34 +5,34 @@ extends WorldEnvironment
 ## created by the Arena (see Arena > Void).
 
 @export_group("Background & ambient")
-@export var background_color := Color("0b2b2a"):
+@export var background_color := Color("071d1d"):
 	set(v): background_color = v; _apply()
-@export var ambient_color := Color("3f8f8a"):
+@export var ambient_color := Color("2e6e6a"):
 	set(v): ambient_color = v; _apply()
-@export_range(0.0, 2.0) var ambient_energy := 0.45:
+@export_range(0.0, 2.0) var ambient_energy := 0.22:
 	set(v): ambient_energy = v; _apply()
 
 @export_group("Depth fog")
 @export var fog_enabled := true:
 	set(v): fog_enabled = v; _apply()
-@export var fog_color := Color("1f6f69"):
+@export var fog_color := Color("1a6560"):
 	set(v): fog_color = v; _apply()
-@export_range(0.0, 0.1, 0.0005) var fog_density := 0.006:
+@export_range(0.0, 0.1, 0.0005) var fog_density := 0.0015:
 	set(v): fog_density = v; _apply()
 ## Fog thickens below this height, filling the void under the platform.
-@export var fog_height := -3.0:
+@export var fog_height := -4.0:
 	set(v): fog_height = v; _apply()
-@export_range(0.0, 2.0) var fog_height_density := 0.12:
+@export_range(0.0, 2.0) var fog_height_density := 0.08:
 	set(v): fog_height_density = v; _apply()
 
 @export_group("Volumetric fog")
 @export var volumetric_enabled := true:
 	set(v): volumetric_enabled = v; _apply()
-@export_range(0.0, 0.2, 0.001) var volumetric_density := 0.006:
+@export_range(0.0, 0.2, 0.001) var volumetric_density := 0.0022:
 	set(v): volumetric_density = v; _apply()
 @export var volumetric_albedo := Color("9fe8e0"):
 	set(v): volumetric_albedo = v; _apply()
-@export var volumetric_emission := Color("082a28"):
+@export var volumetric_emission := Color("041615"):
 	set(v): volumetric_emission = v; _apply()
 @export_range(0.0, 4.0) var volumetric_emission_energy := 1.0:
 	set(v): volumetric_emission_energy = v; _apply()
@@ -42,7 +42,7 @@ extends WorldEnvironment
 @export_group("Glow")
 @export var glow_enabled := true:
 	set(v): glow_enabled = v; _apply()
-@export_range(0.0, 8.0) var glow_intensity := 1.0:
+@export_range(0.0, 8.0) var glow_intensity := 0.9:
 	set(v): glow_intensity = v; _apply()
 @export_range(0.0, 2.0) var glow_strength := 1.0:
 	set(v): glow_strength = v; _apply()
@@ -54,9 +54,9 @@ extends WorldEnvironment
 @export_group("Tonemap & grading")
 @export_range(0.1, 4.0) var exposure := 1.0:
 	set(v): exposure = v; _apply()
-@export_range(0.5, 2.0) var saturation := 1.15:
+@export_range(0.5, 2.0) var saturation := 1.2:
 	set(v): saturation = v; _apply()
-@export_range(0.5, 2.0) var contrast := 1.08:
+@export_range(0.5, 2.0) var contrast := 1.12:
 	set(v): contrast = v; _apply()
 @export var ssao_enabled := true:
 	set(v): ssao_enabled = v; _apply()

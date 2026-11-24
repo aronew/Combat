@@ -163,7 +163,9 @@ func _tick_chase(delta: float) -> void:
 	var player := Game.player
 	var chase := Vector3.ZERO
 	var goal := global_position
-	if player and player.alive:
+	if player:
+		# Keep converging on the player's last position even after death,
+		# so the swarm piles onto the body behind the GAME OVER screen.
 		goal = player.global_position
 		if Game.arena:
 			goal = Game.arena.get_nav_target(global_position, goal)

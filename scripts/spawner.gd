@@ -39,7 +39,9 @@ enum Phase { INTERMISSION, SPAWNING, CLEARING }
 @export_group("Swarm behaviour")
 @export var separation_radius := 0.95
 @export var separation_strength := 7.0
-@export var grid_cell_size := 2.0
+@export var grid_cell_size := 1.0
+## Upper bound on neighbours each bug inspects per update (keeps dense blobs cheap).
+@export var max_separation_neighbors := 14
 
 var wave := 0
 var wave_total := 0
@@ -52,6 +54,7 @@ var _timer := 0.0
 var _to_spawn := 0
 var _grid := {}
 var _rescue_t := 0.0
+var _sep_parity := 0
 var rescued := 0  ## Debug counter: strays put back on the deck.
 
 
@@ -196,13 +199,19 @@ func _rebuild_grid() -> void:
 
 
 func _apply_separation() -> void:
+	# Cost control for big swarms: cells match the separation radius, each bug
+	# looks at a capped number of neighbours, and only half the swarm updates
+	# per physics step (the other half keeps last step's push).
+	_sep_parity = 1 - _sep_parity
 	var r2 := separation_radius * separation_radius
-	for e in active:
+	for i in range(_sep_parity, active.size(), 2):
+		var e := active[i]
 		if e.state != Enemy.State.CHASE:
 			continue
 		var p := e.global_position
 		var c := _cell(p)
 		var push := Vector3.ZERO
+		var checked := 0
 		for dx in range(-1, 2):
 			for dz in range(-1, 2):
 				var bucket = _grid.get(Vector2i(c.x + dx, c.y + dz))
@@ -211,12 +220,19 @@ func _apply_separation() -> void:
 				for o in bucket:
 					if o == e:
 						continue
+					checked += 1
 					var d: Vector3 = p - o.global_position
 					d.y = 0.0
 					var l2 := d.length_squared()
 					if l2 < r2 and l2 > 0.0001:
 						var l := sqrt(l2)
 						push += d / l * (1.0 - l / separation_radius)
+					if checked >= max_separation_neighbors:
+						break
+				if checked >= max_separation_neighbors:
+					break
+			if checked >= max_separation_neighbors:
+				break
 		e.set_separation(push * separation_strength)
 
 

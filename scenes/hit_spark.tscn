@@ -6,7 +6,7 @@
 [sub_resource type="ShaderMaterial" id="Mat_spark"]
 render_priority = 3
 shader = ExtResource("2_neon")
-shader_parameter/energy = 5.0
+shader_parameter/energy = 3.0
 
 [sub_resource type="BoxMesh" id="Mesh_streak"]
 size = Vector3(0.04, 0.26, 0.04)

@@ -9,7 +9,7 @@ extends Node3D
 @export_group("Framing")
 @export_range(30.0, 89.0) var pitch_degrees := 56.0
 @export_range(-180.0, 180.0) var yaw_degrees := 0.0
-@export var distance := 25.0
+@export var distance := 23.0
 @export var fov := 48.0
 
 @export_group("Follow")

@@ -70,7 +70,7 @@ func _process(delta: float) -> void:
 	if p:
 		dash_box.ratio = p.get_dash_ready_ratio()
 		var left := p.get_dash_cooldown_left()
-		dash_cd.text = "%.1f" % left if left > 0.0 else ""
+		dash_cd.text = "%.1f" % left if left > 0.05 else ""
 	_hurt = maxf(_hurt - delta * 2.2, 0.0)
 	_low_pulse += delta
 	var low := 0.0
@@ -201,7 +201,7 @@ func _style() -> void:
 	_label(wave_count, num_italic, 34, Palette.HUD_WHITE, 6)
 	_label(wave_label, plain, 15, Color(1, 1, 1, 0.75), 4)
 	_label(dash_key, plain, 15, Color(1, 1, 1, 0.75), 4)
-	_label(dash_cd, num_bold, 26, Color(0.08, 0.1, 0.12), 0)
+	_label(dash_cd, num_bold, 26, Palette.HUD_WHITE, 6)
 	_label(kills_label, plain, 18, Color(1, 1, 1, 0.8), 4)
 	_label(combo_label, title, 44, Palette.NEON_YELLOW, 10)
 	combo_label.add_theme_color_override("font_outline_color", Color("6a0b52"))

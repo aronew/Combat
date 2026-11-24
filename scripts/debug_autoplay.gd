@@ -15,6 +15,9 @@ var _shot_times: Array[float] = [4.0, 10.0, 16.0]
 var _next_shot := 0
 var _quit_after := 0.0
 var _capturing := false
+var _test_restart := false
+var _over_t := 0.0
+var _go_shot_t := 0.0
 
 
 func _ready() -> void:
@@ -22,6 +25,8 @@ func _ready() -> void:
 	for arg in OS.get_cmdline_user_args():
 		if arg == "--god":
 			_god = true
+		elif arg == "--test-restart":
+			_test_restart = true
 		elif arg.begins_with("--shots="):
 			_shots_dir = arg.get_slice("=", 1)
 		elif arg.begins_with("--shot-times="):
@@ -35,6 +40,11 @@ func _ready() -> void:
 				Game.spawner.wave = maxi(arg.get_slice("=", 1).to_int() - 1, 0)
 	if _shots_dir != "":
 		DirAccess.make_dir_recursive_absolute(_shots_dir)
+	if _test_restart:
+		var restarts: int = Engine.get_meta("autoplay_restarts", 0)
+		if restarts >= 1:
+			print("[autoplay] restart OK: fresh run (wave=%d kills=%d hp=%d time_scale=%.2f)" % [Game.wave, Game.kills, roundi(Game.player.health), Engine.time_scale])
+			_quit_after = 3.0
 	if Game.player:
 		Game.player.autopilot = true
 	print("[autoplay] started god=%s shots=%s" % [_god, _shots_dir])
@@ -44,13 +54,30 @@ func _process(delta: float) -> void:
 	_t += delta
 	_frames += 1
 	_drive(delta)
+	if _shots_dir != "" and Game.is_game_over and _go_shot_t >= 0.0:
+		_go_shot_t += delta
+		if _go_shot_t >= 0.6 and not _capturing:
+			_go_shot_t = -INF
+			_capture("%s/game_over.png" % _shots_dir)
+	if _test_restart and Game.is_game_over:
+		_over_t += delta
+		if _over_t >= 1.0:
+			_over_t = -INF
+			print("[autoplay] game over at wave %d with %d kills (time_scale=%.2f) -> pressing R" % [Game.wave, Game.kills, Engine.time_scale])
+			var ev := InputEventKey.new()
+			ev.physical_keycode = KEY_R
+			ev.pressed = true
+			Engine.set_meta("autoplay_restarts", Engine.get_meta("autoplay_restarts", 0) + 1)
+			Input.parse_input_event(ev)
 
 	_report_t += delta
 	if _report_t >= 2.0:
 		_report_t = 0.0
 		var sp := Game.spawner
-		print("[autoplay] t=%.1f fps=%d wave=%d alive=%d kills=%d hp=%d bolts=%d" % [
-			_t, Engine.get_frames_per_second(), Game.wave,
+		print("[autoplay] t=%.1f fps=%d process=%.2fms physics=%.2fms wave=%d alive=%d kills=%d hp=%d bolts=%d" % [
+			_t, Engine.get_frames_per_second(),
+			Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0,
+			Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0, Game.wave,
 			sp.active.size() if sp else 0, Game.kills,
 			roundi(Game.player.health) if Game.player else 0,
 			Game.projectiles.active_count() if Game.projectiles else 0])
@@ -71,7 +98,7 @@ func _process(delta: float) -> void:
 ## Flags chasing bugs that haven't moved 0.75 m in 3 s (pathing regressions).
 var _stall := {}
 func _report_stalls(sp: Spawner) -> void:
-	if sp == null:
+	if sp == null or Game.is_game_over:
 		return
 	var seen := {}
 	for e in sp.active:

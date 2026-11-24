@@ -11,10 +11,10 @@ uniform float metallic_value : hint_range(0.0, 1.0) = 0.55;
 uniform float roughness_value : hint_range(0.0, 1.0) = 0.55;
 
 uniform vec3 hive_center = vec3(13.5, 0.0, -8.5);
-uniform float hive_radius = 8.0;
+uniform float hive_radius = 7.0;
 uniform vec3 grime_color : source_color = vec3(0.07, 0.11, 0.03);
 uniform vec3 vein_color : source_color = vec3(0.55, 1.0, 0.15);
-uniform float vein_energy = 3.0;
+uniform float vein_energy = 1.4;
 
 varying vec3 world_pos;
 
