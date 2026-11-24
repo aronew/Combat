@@ -20,7 +20,20 @@ const DEFS := {
 	"floor_vent": {"size": Vector2(2.0, 1.4), "h": 0.06, "solid": false},
 	"planter": {"size": Vector2(2.4, 1.0), "h": 0.6, "solid": true},
 	"locker_row": {"size": Vector2(1.9, 0.5), "h": 2.0, "solid": true},
+	# Starship
+	"ship_pillar": {"size": Vector2(1.24, 1.24), "h": 3.45, "solid": true},
+	"hazard_crate": {"size": Vector2(1.42, 1.03), "h": 0.94, "solid": true},
+	"hull_window": {"size": Vector2(3.0, 0.5), "h": 3.3, "solid": true},
+	"supply_pod": {"size": Vector2(2.0, 1.16), "h": 1.25, "solid": true},
+	# Foundry
+	"crucible": {"size": Vector2(2.5, 2.5), "h": 2.4, "solid": true},
+	"smoke_stack": {"size": Vector2(1.1, 1.1), "h": 1.75, "solid": true},
+	"furnace_pillar": {"size": Vector2(1.5, 1.5), "h": 4.3, "solid": true},
+	"ingot_stack": {"size": Vector2(1.3, 1.0), "h": 0.65, "solid": true},
 }
+
+## Shared star-field material for the "SpaceGlass" surfaces of hull windows.
+static var space_glass: ShaderMaterial
 
 static var _scenes := {}
 static var _tints := {}
@@ -44,6 +57,8 @@ static func place(kit: LevelKit, name: String, pos: Vector3, yaw: float, scale :
 	kit.root.add_child(n)
 	if tint.a > 0.0:
 		_apply_tint(n, tint)
+	if name == "hull_window":
+		_apply_space_glass(n)
 	var size: Vector2 = def.size * Vector2(scale.x, scale.z)
 	var h: float = def.h * scale.y
 	if def.solid:
@@ -64,3 +79,15 @@ static func _apply_tint(n: Node, tint: Color) -> void:
 					t.albedo_color = tint
 					_tints[key] = t
 				m.set_surface_override_material(s, _tints[key])
+
+
+static func _apply_space_glass(n: Node) -> void:
+	if space_glass == null:
+		space_glass = ShaderMaterial.new()
+		space_glass.shader = load("res://scripts/shaders/space_glass.gdshader")
+	for mi in n.find_children("*", "MeshInstance3D", true, false):
+		var m := mi as MeshInstance3D
+		for s in m.mesh.get_surface_count():
+			var mat := m.mesh.surface_get_material(s)
+			if mat and mat.resource_name == "SpaceGlass":
+				m.set_surface_override_material(s, space_glass)

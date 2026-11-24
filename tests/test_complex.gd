@@ -22,6 +22,7 @@ func _initialize() -> void:
 	await process_frame
 
 	prof.dive_layout = "complex"
+	prof.dive_destination = "deepworks"
 	var total_area := {}
 	var t0 := Time.get_ticks_msec()
 	var builds := 0
@@ -44,6 +45,22 @@ func _initialize() -> void:
 			dive_areas.append(dive_area)
 		dive_areas.sort()
 		total_area[depth] = dive_areas[dive_areas.size() / 2]
+	# The other destinations: same checks on a few dives each (depth 3).
+	for dest in ["starship", "foundry"]:
+		prof.dive_destination = dest
+		prof.dive_depth = 3
+		prof.dive_floors = ComplexGen.floor_count(3)
+		for s in 8:
+			prof.dive_seed = 5000 + s * 7919
+			for f in prof.dive_floors:
+				prof.dive_floor = f
+				var lvl = level_scene.instantiate()
+				root.add_child(lvl)
+				builds += 1
+				_check_floor(lvl, "%s seed %d floor %d" % [dest, prof.dive_seed, f + 1])
+				lvl.queue_free()
+				await process_frame
+	prof.dive_destination = "deepworks"
 	var ms := Time.get_ticks_msec() - t0
 	print("classic level walkable area: %d m2" % roundi(classic_area))
 	for d in total_area:

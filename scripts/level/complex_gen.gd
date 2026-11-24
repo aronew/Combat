@@ -20,16 +20,57 @@ const MARGIN := 2.5
 
 const THEMES := [
 	{"name": "Upper Decks", "lamp": Color("ffc178"), "alt": Color("ffe3b8"), "red_rails": true,
-		"kinds": {"plain": 5, "block": 2, "split": 1, "hole": 2}},
+		"kinds": {"plain": 5, "block": 2, "split": 1, "hole": 2}, "interior": 0.35},
 	{"name": "Switchgear Halls", "lamp": Color("9cc4ff"), "alt": Color("ffd9a8"),
-		"kinds": {"plain": 2, "block": 5, "split": 2, "hole": 1}},
+		"kinds": {"plain": 2, "block": 5, "split": 2, "hole": 1}, "interior": 0.6},
 	{"name": "Pump Works", "lamp": Color("ffd9a8"), "alt": Color("8fe8ff"), "red_rails": true,
-		"kinds": {"plain": 3, "block": 2, "split": 3, "hole": 3}},
+		"kinds": {"plain": 3, "block": 2, "split": 3, "hole": 3}, "interior": 0.3},
 	{"name": "Hive Foundry", "lamp": Color("ffe2b0"), "alt": Color("c8ff8a"),
-		"kinds": {"plain": 3, "block": 2, "split": 2, "hole": 3}},
+		"kinds": {"plain": 3, "block": 2, "split": 2, "hole": 3}, "interior": 0.45},
 ]
 const FINAL_THEME := {"name": "Reactor Core", "lamp": Color("ffb35c"), "alt": Color("e8eef5"), "red_rails": true,
-	"kinds": {"plain": 3, "block": 3, "split": 2, "hole": 2}}
+	"kinds": {"plain": 3, "block": 3, "split": 2, "hole": 2}, "interior": 0.3}
+
+## Starship floors (a derelict hauler): almost everything is inside the hull.
+const SHIP_THEMES := [
+	{"name": "Cargo Spine", "lamp": Color("ff4a3d"), "alt": Color("ffb38a"), "red_rails": true,
+		"kinds": {"plain": 4, "block": 3, "split": 2, "hole": 0}, "interior": 1.0},
+	{"name": "Crew Ring", "lamp": Color("5ff2e8"), "alt": Color("ff5a4a"),
+		"kinds": {"plain": 4, "block": 2, "split": 3, "hole": 1}, "interior": 1.0},
+	{"name": "Engineering Deck", "lamp": Color("ff7a2e"), "alt": Color("5ff2e8"), "red_rails": true,
+		"kinds": {"plain": 2, "block": 4, "split": 2, "hole": 1}, "interior": 1.0},
+]
+const SHIP_FINAL := {"name": "Drive Core", "lamp": Color("ff3b3b"), "alt": Color("5ff2e8"), "red_rails": true,
+	"kinds": {"plain": 3, "block": 3, "split": 2, "hole": 0}, "interior": 1.0}
+
+## Foundry floors (the Furnace Chasm): gantries over a lake of molten metal.
+const FOUNDRY_THEMES := [
+	{"name": "Slag Gantries", "lamp": Color("ff9a3d"), "alt": Color("ffd27a"), "red_rails": true,
+		"kinds": {"plain": 5, "block": 1, "split": 1, "hole": 3}, "interior": 0.15},
+	{"name": "Crucible Halls", "lamp": Color("ffb050"), "alt": Color("ff6a2a"),
+		"kinds": {"plain": 2, "block": 3, "split": 2, "hole": 3}, "interior": 0.5},
+	{"name": "Smelter Works", "lamp": Color("ffc070"), "alt": Color("ff5030"), "red_rails": true,
+		"kinds": {"plain": 3, "block": 3, "split": 2, "hole": 2}, "interior": 0.3},
+]
+const FOUNDRY_FINAL := {"name": "Furnace Core", "lamp": Color("ff7a2e"), "alt": Color("ffd27a"), "red_rails": true,
+	"kinds": {"plain": 3, "block": 3, "split": 2, "hole": 2}, "interior": 0.25}
+
+## Where a dive goes. `biome` decides what lies under and around the floors
+## (Level/LevelKit build it): the misty abyss, open space, or molten metal.
+const DESTINATIONS := {
+	"deepworks": {"name": "The Deepworks", "biome": "abyss", "floor_tint": Color(0, 0, 0, 0)},
+	"starship": {"name": "Derelict Hauler", "biome": "space", "floor_tint": Color(0.27, 0.31, 0.34)},
+	"foundry": {"name": "Furnace Chasm", "biome": "lava", "floor_tint": Color(0.27, 0.22, 0.19)},
+}
+
+## Interior sections: rooms fill most of their cell, gap to the cell edge (m).
+const INTERIOR_INSET := Vector2(2.0, 3.5)
+## Chance that two linked interior rooms open straight into each other (one hall)
+## rather than joining through a walled corridor.
+const MERGE_CHANCE := 0.45
+## Height of the structure that fills the gaps inside an interior section, and
+## of the low walls on the camera-facing (south and east) sides.
+const FILL_HEIGHT := 1.1
 
 ## What a room is for: decides its name, props, walls and floor tint.
 const PURPOSES := {
@@ -94,6 +135,10 @@ var _rooms: Array = []
 var _bridges: Array = []
 var _cells: Array[Vector2i] = []
 var _links: Array = []  # [i, j, on_main_path]
+var _dest := {}
+var _biome := "abyss"
+var _inside := {}  # room index -> true for rooms in an interior section
+var _merges: Array = []  # [i, j]: linked interior rooms opened into one hall
 var _occupied: Array[Vector3] = []  # x, z, radius: spots objects must keep clear of
 var _out := {}
 
@@ -108,16 +153,29 @@ static func room_count(depth: int, floor_idx: int) -> int:
 	return mini(10 + depth + floor_idx, 16)
 
 
-static func theme_for(seed_: int, floor_idx: int, floors: int) -> Dictionary:
+static func theme_for(seed_: int, floor_idx: int, floors: int, dest := "deepworks") -> Dictionary:
+	var themes: Array = THEMES
+	var final: Dictionary = FINAL_THEME
+	match dest:
+		"starship":
+			themes = SHIP_THEMES
+			final = SHIP_FINAL
+		"foundry":
+			themes = FOUNDRY_THEMES
+			final = FOUNDRY_FINAL
 	if floor_idx >= floors - 1:
-		return FINAL_THEME
-	return THEMES[posmod(seed_ + floor_idx, THEMES.size())]
+		return final
+	return themes[posmod(seed_ + floor_idx, themes.size())]
 
 
-func generate(seed_: int, floor_idx: int, floors: int, depth: int) -> Dictionary:
-	rng.seed = hash([seed_, floor_idx, depth])
+func generate(seed_: int, floor_idx: int, floors: int, depth: int, dest := "deepworks") -> Dictionary:
+	rng.seed = hash([seed_, floor_idx, depth, dest])
+	if not DESTINATIONS.has(dest):
+		dest = "deepworks"
+	_dest = DESTINATIONS[dest]
+	_biome = _dest.biome
 	var final := floor_idx >= floors - 1
-	var theme := theme_for(seed_, floor_idx, floors)
+	var theme := theme_for(seed_, floor_idx, floors, dest)
 	var n := room_count(depth, floor_idx)
 	var cols := 5 if n <= 12 else 6
 	var rows := 4 if n <= 12 else 5
@@ -132,6 +190,7 @@ func generate(seed_: int, floor_idx: int, floors: int, depth: int) -> Dictionary
 	for l in _links:
 		l[2] = path.has(l[0]) and path.has(l[1])
 	_add_loops()
+	_pick_interior(theme, end, final)
 
 	_out = {
 		"name": theme.name, "final": final, "floor": floor_idx, "floors": floors, "lamp": theme.lamp,
@@ -139,21 +198,34 @@ func generate(seed_: int, floor_idx: int, floors: int, depth: int) -> Dictionary
 		"barrels": [], "nests": [], "turrets": [], "breakers": [], "lasers": [], "doors": [],
 		"crates": [], "panels": [], "guides": [], "placements": [], "shaft_glows": [], "carcasses": [],
 		"props": [], "wall_lights": [], "guide_loops": [], "shaft_pipes": [],
-		"uplink": Vector3.INF, "cargo": Vector3.INF,
+		"uplink": Vector3.INF, "cargo": Vector3.INF, "low_walls": [], "fills": [],
+		"biome": _biome, "destination": dest, "destination_name": _dest.name, "smoke": [],
 	}
 	var used_names := {}
 	for i in _cells.size():
 		var role := "start" if i == 0 else ("end" if i == end else "normal")
 		var kind := _pick_kind(theme, role, final)
+		if _inside.has(i) and kind == "hole" and rng.randf() < 0.6:
+			kind = "block"
 		_rooms.append(_make_room(i, kind, role, theme, used_names))
+	# Links inside an interior section: a wide-open hall or a walled corridor.
+	var open_links: Array = []
 	for l in _links:
-		_make_bridge(l[0], l[1], l[2])
+		if _inside.has(l[0]) and _inside.has(l[1]) and rng.randf() < MERGE_CHANCE:
+			_merges.append([l[0], l[1]])
+		else:
+			open_links.append(l)
+	for m in _merges:
+		_merge_rooms(m[0], m[1])
+	for l in open_links:
+		_make_bridge(l[0], l[1], l[2], _inside.has(l[0]) and _inside.has(l[1]))
 
 	# Bridge openings stay clear of crates and objects.
 	for b in _bridges:
 		for p in b.ends:
 			_occupied.append(Vector3(p.x, p.y, 3.4))
 
+	_build_fills()
 	_place_specials(end, final, dist, path)
 	for i in _rooms.size():
 		_dress_room(i, floor_idx, final)
@@ -173,7 +245,7 @@ func generate(seed_: int, floor_idx: int, floors: int, depth: int) -> Dictionary
 	var rooms_out: Array = []
 	for r in _rooms:
 		var d := {"id": r.id, "name": r.name, "rect": r.rect, "kind": r.kind, "lamp": r.lamp, "role": r.role,
-			"purpose": r.purpose, "walls": r.walls, "floor_tint": r.floor_tint}
+			"purpose": r.purpose, "walls": r.walls, "floor_tint": r.floor_tint, "interior": r.interior}
 		for k in ["block", "hole", "split_x", "door", "block_props"]:
 			if r.has(k):
 				d[k] = r[k]
@@ -181,7 +253,7 @@ func generate(seed_: int, floor_idx: int, floors: int, depth: int) -> Dictionary
 	_out.rooms = rooms_out
 	var bridges_out: Array = []
 	for b in _bridges:
-		bridges_out.append({"rect": b.rect, "solid": false, "along_x": b.along_x})
+		bridges_out.append({"rect": b.rect, "solid": b.get("walled", false), "walled": b.get("walled", false), "along_x": b.along_x})
 	_out.bridges = bridges_out
 	_out.main_path = path
 	return _out
@@ -333,12 +405,17 @@ func _make_room(i: int, kind: String, role: String, theme: Dictionary, used_name
 			h = clampf(w + rng.randf_range(-3.0, 3.0), 19.0, 26.0)
 	w = snappedf(w, 0.5)
 	h = snappedf(h, 0.5)
+	var inside := _inside.has(i)
+	if inside:
+		# Interior rooms fill most of their cell; the rest becomes solid structure.
+		w = snappedf(CELL - 2.0 * rng.randf_range(INTERIOR_INSET.x, INTERIOR_INSET.y), 0.5)
+		h = snappedf(CELL - 2.0 * rng.randf_range(INTERIOR_INSET.x, INTERIOR_INSET.y), 0.5)
 	var cell := _cells[i] - _cells[0]
 	var cc := Vector2(cell.x * CELL, cell.y * CELL)
 	# Stay inside the cell, and always cover the cell's centre band so bridges line up.
 	var jx := maxf(minf((CELL - 2.0 * MARGIN - w) * 0.5, w * 0.5 - 5.5), 0.0)
 	var jz := maxf(minf((CELL - 2.0 * MARGIN - h) * 0.5, h * 0.5 - 5.5), 0.0)
-	if kind == "start":
+	if kind == "start" or inside:
 		jx = 0.0
 		jz = 0.0
 	var c := Vector2(snappedf(cc.x + rng.randf_range(-jx, jx), 0.5), snappedf(cc.y + rng.randf_range(-jz, jz), 0.5))
@@ -359,7 +436,8 @@ func _make_room(i: int, kind: String, role: String, theme: Dictionary, used_name
 		"id": StringName("r%d" % i), "name": nm, "rect": rect, "role": role, "center3": Vector3(c.x, 0, c.y),
 		"lamp": theme.alt if rng.randf() < 0.3 else theme.lamp, "nests": 0, "side": {},
 		"kind": {"start": "plain", "cargo": "plain", "reactor": "hole"}.get(kind, kind), "tag": kind,
-		"purpose": purpose, "walls": [], "floor_tint": FLOOR_TINTS.get(purpose, Color(0, 0, 0, 0)),
+		"purpose": purpose, "walls": [], "floor_tint": FLOOR_TINTS.get(purpose, _dest.floor_tint),
+		"interior": inside, "cell_rect": Rect2(cc.x - CELL * 0.5, cc.y - CELL * 0.5, CELL, CELL),
 	}
 	match kind:
 		"block":
@@ -368,6 +446,8 @@ func _make_room(i: int, kind: String, role: String, theme: Dictionary, used_name
 			room.block = Rect2(c.x - bw * 0.5, c.y - bh * 0.5, bw, bh)
 		"hole":
 			var hs := maxf(minf(w, h) * rng.randf_range(0.3, 0.4), 6.0)
+			if inside:
+				hs = minf(hs, 9.0)
 			hs = minf(hs, minf(w, h) - 10.0)
 			room.hole = Rect2(c.x - hs * 0.5, c.y - hs * 0.5, hs, hs)
 		"reactor":
@@ -403,10 +483,12 @@ func _pieces(r: Dictionary) -> Array[Rect2]:
 # Bridges
 # ==========================================================================
 
-func _make_bridge(i: int, j: int, main: bool) -> void:
+func _make_bridge(i: int, j: int, main: bool, corridor := false) -> void:
 	var a: Dictionary = _rooms[i]
 	var b: Dictionary = _rooms[j]
 	var bw := 4.0 if main else 3.0
+	if corridor:
+		bw = 5.0 if main else 4.0
 	var ca := _cells[i]
 	var cb := _cells[j]
 	var bridge := {}
@@ -465,6 +547,7 @@ func _make_bridge(i: int, j: int, main: bool) -> void:
 		south.side["n"] = x
 	bridge.main = main
 	bridge.width = bw
+	bridge.walled = corridor
 	_bridges.append(bridge)
 
 
@@ -619,6 +702,7 @@ func _dress_room(i: int, floor_idx: int, final: bool) -> void:
 		_out.guides.append([c + Vector3(-3.5, 0, -4.0), c + Vector3(-3.5, 0, 4.0)])
 		_out.guides.append([c + Vector3(3.5, 0, -4.0), c + Vector3(3.5, 0, 4.0)])
 	_dress_purpose(r)
+	_dress_biome(r)
 	for k in rng.randi_range(0, 2):
 		var spot := _free_spot(r, 2.5, 0.0)
 		if not spot.is_empty():
@@ -695,14 +779,21 @@ func _dress_purpose(r: Dictionary) -> void:
 	var purpose: String = r.purpose
 	var rect: Rect2 = r.rect
 	var c := rect.get_center()
+	# Interior rooms: walled all round (tall at the back, low at the front).
+	if r.interior:
+		_build_interior_walls(r)
 	# Solid walls on the far sides (top of the screen), with props against them.
-	if WALL_CHANCE.has(purpose):
+	elif WALL_CHANCE.has(purpose):
 		for side in ["n", "w"]:
 			if r.side.has(side) or rng.randf() > WALL_CHANCE[purpose]:
 				continue
 			_build_wall(r, side)
 	# Props along the open railing edges (AC units, cabinets, cases).
 	var edge_props: Array = ["ac_unit", "electrical_box", "hard_case"]
+	if _biome == "space":
+		edge_props = ["hazard_crate", "supply_pod", "electrical_box"]
+	elif _biome == "lava":
+		edge_props = ["smoke_stack", "ingot_stack", "electrical_box"]
 	if purpose == "hydroponics":
 		edge_props = ["planter"]
 	elif purpose == "reactor" or purpose == "landing" or purpose == "cargo_lift":
@@ -835,12 +926,13 @@ func _case_cluster(r: Dictionary) -> void:
 		return
 	var p: Vector2 = sp[0]
 	var yaw := rng.randf_range(-0.3, 0.3) + (0.0 if rng.randf() < 0.5 else PI * 0.5)
-	_prop("hard_case", p, yaw)
+	var case_name := "hazard_crate" if _biome == "space" else "hard_case"
+	_prop(case_name, p, yaw)
 	var off := Vector2(cos(-yaw), sin(-yaw)) * 1.25
 	for q in [p + off, p - off * 0.95 + Vector2(0.1, 0.8).rotated(-yaw)]:
 		var qq: Vector2 = q
 		if rng.randf() < 0.65 and _in_pieces_margin(r, qq, 2.4) and _is_clear(qq, 0.9):
-			_prop("hard_case", qq, yaw + rng.randf_range(-0.2, 0.2))
+			_prop(case_name, qq, yaw + rng.randf_range(-0.2, 0.2))
 	_occupy(p, 2.4)
 
 
@@ -914,6 +1006,281 @@ func _hazard_bridges(floor_idx: int) -> void:
 		count += 1
 
 
+
+
+# ==========================================================================
+# Destination dressing
+# ==========================================================================
+
+## Set pieces that make each destination read at a glance: deck pillars and
+## cargo on the starship, crucibles, furnace towers and smoke on the foundry.
+func _dress_biome(r: Dictionary) -> void:
+	var rect: Rect2 = r.rect
+	var big := rect.size.x >= 20.0 and rect.size.y >= 18.0
+	match _biome:
+		"space":
+			if big and r.tag != "start":
+				# Two or four pillars holding up the deck above (Teal Ring mockup).
+				var inset := Vector2(minf(6.5, rect.size.x * 0.28), minf(6.0, rect.size.y * 0.28))
+				for corner in [rect.position + inset, Vector2(rect.end.x - inset.x, rect.position.y + inset.y),
+						Vector2(rect.position.x + inset.x, rect.end.y - inset.y), rect.end - inset]:
+					var cp: Vector2 = corner
+					if _in_pieces_margin(r, cp, 1.5) and _is_clear(cp, 2.2):
+						_prop("ship_pillar", cp, 0.0)
+						_occupy(cp, 2.0)
+			for k in rng.randi_range(0, 2):
+				var sp := _free_spot(r, 3.0, 2.0)
+				if not sp.is_empty():
+					_prop("supply_pod", sp[0], rng.randf() * TAU)
+					_occupy(sp[0], 1.8)
+		"lava":
+			if big and r.tag != "start" and rng.randf() < 0.7:
+				var sp := _free_spot(r, 4.5, 3.0)
+				if not sp.is_empty():
+					_prop("crucible", sp[0], rng.randf() * TAU)
+					_occupy(sp[0], 2.8)
+					_out.smoke.append(Vector3(sp[0].x, 2.4, sp[0].y))
+			if big:
+				for k in 2:
+					var sp := _free_spot(r, 2.5, 2.0)
+					if not sp.is_empty():
+						_prop("furnace_pillar", sp[0], rng.randf() * TAU)
+						_occupy(sp[0], 1.8)
+			for k in rng.randi_range(0, 2):
+				var sp := _free_spot(r, 2.2, 1.4)
+				if not sp.is_empty():
+					_prop("ingot_stack", sp[0], rng.randf() * TAU)
+					_occupy(sp[0], 1.2)
+	# Smoke rises from every exhaust stack placed in this room.
+	if _biome == "lava":
+		for pr in _out.props:
+			if pr.name == "smoke_stack" and rect.grow(1.0).has_point(Vector2(pr.pos.x, pr.pos.z)) and not pr.has("smoking"):
+				pr.smoking = true
+				_out.smoke.append(pr.pos + Vector3(0, 1.75, 0))
+
+# ==========================================================================
+# Interior sections
+# ==========================================================================
+
+## Pick one or two connected clusters of rooms to be interiors: enclosed rooms,
+## walled corridors and halls instead of platforms over the void. The arrival
+## lift and the reactor stay out in the open.
+func _pick_interior(theme: Dictionary, end: int, final: bool) -> void:
+	_inside.clear()
+	var target := roundi(_cells.size() * float(theme.get("interior", 0.0)) * rng.randf_range(0.8, 1.2))
+	if target < 2:
+		return
+	var banned := {0: true}
+	if final:
+		banned[end] = true
+	var clusters := 1 if target < 6 or rng.randf() < 0.5 else 2
+	for c in clusters:
+		var want := target / clusters
+		var seeds: Array[int] = []
+		for i in _cells.size():
+			if not banned.has(i) and not _inside.has(i):
+				seeds.append(i)
+		if seeds.is_empty():
+			return
+		var queue: Array[int] = [seeds[rng.randi_range(0, seeds.size() - 1)]]
+		var got := 0
+		while not queue.is_empty() and got < want:
+			var cur: int = queue.pop_front()
+			if _inside.has(cur) or banned.has(cur):
+				continue
+			_inside[cur] = true
+			got += 1
+			var nbs := _neighbors(cur)
+			_shuffle(nbs)
+			for nb in nbs:
+				if not _inside.has(nb) and not banned.has(nb):
+					queue.append(nb)
+
+
+## Two linked interior rooms grow to meet at their shared cell edge, making one
+## big hall (the level's region graph connects touching rooms on its own).
+func _merge_rooms(i: int, j: int) -> void:
+	var a: Dictionary = _rooms[i]
+	var b: Dictionary = _rooms[j]
+	var ca := _cells[i]
+	var cb := _cells[j]
+	var ra: Rect2 = a.rect
+	var rb: Rect2 = b.rect
+	var lo: float
+	var hi: float
+	if ca.y == cb.y:
+		var west := a if ca.x < cb.x else b
+		var east := b if ca.x < cb.x else a
+		var rw: Rect2 = west.rect
+		var re: Rect2 = east.rect
+		var edge := ((west.cell_rect as Rect2).end.x)
+		west.rect = Rect2(rw.position, Vector2(edge - rw.position.x, rw.size.y))
+		east.rect = Rect2(Vector2(edge, re.position.y), Vector2(re.end.x - edge, re.size.y))
+		west.side["e"] = edge
+		east.side["w"] = edge
+		lo = maxf(rw.position.y, re.position.y)
+		hi = minf(rw.end.y, re.end.y)
+		west.opens = west.get("opens", []) + [{"side": "e", "lo": lo, "hi": hi}]
+		east.opens = east.get("opens", []) + [{"side": "w", "lo": lo, "hi": hi}]
+		var z := lo + 1.0
+		while z < hi - 0.5:
+			_occupy(Vector2(edge, z), 1.8)
+			z += 1.5
+	else:
+		var north := a if ca.y < cb.y else b
+		var south := b if ca.y < cb.y else a
+		var rn: Rect2 = north.rect
+		var rs: Rect2 = south.rect
+		var edge := ((north.cell_rect as Rect2).end.y)
+		north.rect = Rect2(rn.position, Vector2(rn.size.x, edge - rn.position.y))
+		south.rect = Rect2(Vector2(rs.position.x, edge), Vector2(rs.size.x, rs.end.y - edge))
+		north.side["s"] = edge
+		south.side["n"] = edge
+		lo = maxf(rn.position.x, rs.position.x)
+		hi = minf(rn.end.x, rs.end.x)
+		north.opens = north.get("opens", []) + [{"side": "s", "lo": lo, "hi": hi}]
+		south.opens = south.get("opens", []) + [{"side": "n", "lo": lo, "hi": hi}]
+		var x := lo + 1.0
+		while x < hi - 0.5:
+			_occupy(Vector2(x, edge), 1.8)
+			x += 1.5
+	# Inner rects (blocks, holes, bulkheads) and centres stay put: still inside.
+
+
+## The parts of each interior cell that aren't room or corridor become solid
+## structure (a dark roof slab), so an interior section reads as one building
+## instead of islands over the abyss.
+func _build_fills() -> void:
+	for i in _rooms.size():
+		if not _inside.has(i):
+			continue
+		var r: Dictionary = _rooms[i]
+		var pieces: Array[Rect2] = [r.cell_rect]
+		var cuts: Array[Rect2] = [r.rect]
+		for b in _bridges:
+			cuts.append(b.rect)
+		for j in _rooms.size():
+			if j != i:
+				cuts.append(_rooms[j].rect)
+		for cut in cuts:
+			var next: Array[Rect2] = []
+			for pc in pieces:
+				next.append_array(_subtract(pc, cut))
+			pieces = next
+		# The fill stops at this cell's edge: next to an open cell the gap
+		# beyond it stays void, so catwalks out of the section cross open air.
+		for pc in pieces:
+			if pc.size.x > 0.3 and pc.size.y > 0.3:
+				_out.fills.append(pc)
+
+
+## a minus b, as up to four rects.
+func _subtract(a: Rect2, b: Rect2) -> Array[Rect2]:
+	var out: Array[Rect2] = []
+	if not a.intersects(b):
+		out.append(a)
+		return out
+	var i := a.intersection(b)
+	if i.position.y > a.position.y:
+		out.append(Rect2(a.position.x, a.position.y, a.size.x, i.position.y - a.position.y))
+	if i.end.y < a.end.y:
+		out.append(Rect2(a.position.x, i.end.y, a.size.x, a.end.y - i.end.y))
+	if i.position.x > a.position.x:
+		out.append(Rect2(a.position.x, i.position.y, i.position.x - a.position.x, i.size.y))
+	if i.end.x < a.end.x:
+		out.append(Rect2(i.end.x, i.position.y, a.end.x - i.end.x, i.size.y))
+	return out
+
+
+## Openings (corridor or catwalk ends, halls) along one side of a room, as [lo, hi].
+func _side_openings(r: Dictionary, side: String) -> Array[Vector2]:
+	var rect: Rect2 = r.rect
+	var out: Array[Vector2] = []
+	for b in _bridges:
+		var br: Rect2 = b.rect
+		match side:
+			"n":
+				if absf(br.end.y - rect.position.y) < 0.05 and br.end.x > rect.position.x and br.position.x < rect.end.x:
+					out.append(Vector2(br.position.x - 0.3, br.end.x + 0.3))
+			"s":
+				if absf(br.position.y - rect.end.y) < 0.05 and br.end.x > rect.position.x and br.position.x < rect.end.x:
+					out.append(Vector2(br.position.x - 0.3, br.end.x + 0.3))
+			"w":
+				if absf(br.end.x - rect.position.x) < 0.05 and br.end.y > rect.position.y and br.position.y < rect.end.y:
+					out.append(Vector2(br.position.y - 0.3, br.end.y + 0.3))
+			"e":
+				if absf(br.position.x - rect.end.x) < 0.05 and br.end.y > rect.position.y and br.position.y < rect.end.y:
+					out.append(Vector2(br.position.y - 0.3, br.end.y + 0.3))
+	for o in r.get("opens", []):
+		if o.side == side:
+			out.append(Vector2(o.lo, o.hi))
+	return out
+
+
+## Walls round an interior room, broken where corridors, catwalks and halls
+## meet it: wall panels at the back (north, west), low walls at the front
+## (south, east) so the camera still sees in.
+func _build_interior_walls(r: Dictionary) -> void:
+	var rect: Rect2 = r.rect
+	for side in ["n", "w", "s", "e"]:
+		var a: Vector2
+		var dir: Vector2
+		var length: float
+		var inward: Vector2
+		match side:
+			"n":
+				a = rect.position; dir = Vector2(1, 0); length = rect.size.x; inward = Vector2(0, 1)
+			"s":
+				a = Vector2(rect.position.x, rect.end.y); dir = Vector2(1, 0); length = rect.size.x; inward = Vector2(0, -1)
+			"w":
+				a = rect.position; dir = Vector2(0, 1); length = rect.size.y; inward = Vector2(1, 0)
+			_:
+				a = Vector2(rect.end.x, rect.position.y); dir = Vector2(0, 1); length = rect.size.y; inward = Vector2(-1, 0)
+		var base := a.x if dir.x > 0.0 else a.y
+		# Wall runs along this side between the openings.
+		var runs: Array[Vector2] = [Vector2(0.0, length)]
+		for o in _side_openings(r, side):
+			var cut := Vector2(o.x - base, o.y - base)
+			var next: Array[Vector2] = []
+			for run in runs:
+				if cut.y <= run.x or cut.x >= run.y:
+					next.append(run)
+					continue
+				if cut.x > run.x:
+					next.append(Vector2(run.x, cut.x))
+				if cut.y < run.y:
+					next.append(Vector2(cut.y, run.y))
+			runs = next
+		if not r.walls.has(side):
+			r.walls.append(side)
+		var far: bool = side == "n" or side == "w"
+		for run in runs:
+			var seg_len: float = run.y - run.x
+			if seg_len < 0.6:
+				continue
+			var p0 := a + dir * run.x
+			var p1 := a + dir * run.y
+			if far:
+				var n := maxi(1, roundi(seg_len / 3.0))
+				var seg := seg_len / n
+				for k in n:
+					var panel := "hull_window" if _biome == "space" and k % 2 == 1 else "wall_panel"
+					_prop(panel, p0 + dir * (k + 0.5) * seg + inward * 0.25, _face(inward), Vector3(seg / 3.0, 1, 1))
+				var lights := maxi(1, roundi(seg_len / 10.0))
+				for k in lights:
+					var lp := p0 + dir * (k + 0.5) * (seg_len / lights) + inward * 0.9
+					_out.wall_lights.append({"pos": Vector3(lp.x, 2.7, lp.y), "color": r.lamp})
+			else:
+				_out.low_walls.append([Vector3(p0.x, 0, p0.y) + Vector3(inward.x, 0, inward.y) * 0.2,
+					Vector3(p1.x, 0, p1.y) + Vector3(inward.x, 0, inward.y) * 0.2])
+			var t := 0.0
+			while t <= seg_len:
+				_occupy(p0 + dir * t + inward * 0.4, 0.9)
+				t += 1.5
+		if far:
+			var list: Array = WALL_PROPS.get(r.purpose, ["electrical_box", "locker_row", "hard_case"])
+			_line_props(r, side, list, 0.55, 0.55, true)
+
 # ==========================================================================
 # Population
 # ==========================================================================
@@ -923,6 +1290,8 @@ func _populate(i: int, floor_idx: int, depth: int, final: bool) -> void:
 	var tag: String = r.tag
 	var area := (r.rect as Rect2).get_area()
 	var budget := area / 75.0 * (1.0 + 0.15 * floor_idx) * rng.randf_range(0.7, 1.25)
+	if r.interior:
+		budget *= 0.6  # interior rooms fill their whole cell: keep the bug count per room similar
 	if tag == "cargo":
 		budget *= 1.2
 	elif tag == "reactor":

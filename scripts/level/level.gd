@@ -72,6 +72,8 @@ var breakers: Array[Interactable] = []
 var rooms: Array = []
 var bridges: Array = []
 var generated := false
+## What lies under the floors: "abyss" (Deepworks), "space" (starship), "lava" (foundry).
+var biome := "abyss"
 var layout := {}
 var floor_name := "First Dive"
 var is_final_floor := true
@@ -119,10 +121,45 @@ var _next: Array = []  # [from][to] -> portal index (or -1)
 var _blockers: Array[Vector3] = []
 
 
+## Per-destination sky, fog, ambient and key light (deep space, furnace glow).
+const BIOME_ENV := {
+	"space": {"background_color": Color("02030a"), "ambient_color": Color("6a7aa0"), "ambient_energy": 0.24,
+		"fog_color": Color("140c22"), "fog_density": 0.0006, "fog_height": -80.0, "fog_height_density": 0.0,
+		"volumetric_albedo": Color("a890b8"), "volumetric_emission": Color("12081a"), "volumetric_density": 0.0005,
+		"glow_intensity": 1.15, "saturation": 1.25, "light_color": Color(0.85, 0.78, 1.0), "light_energy": 0.42},
+	"lava": {"background_color": Color("1a0703"), "ambient_color": Color("6e3a20"), "ambient_energy": 0.17,
+		"fog_color": Color("3a1408"), "fog_density": 0.0012, "fog_height": -12.0, "fog_height_density": 0.03,
+		"volumetric_albedo": Color("ffb070"), "volumetric_emission": Color("4a1604"), "volumetric_density": 0.0012,
+		"glow_intensity": 1.25, "saturation": 1.22, "light_color": Color(1.0, 0.72, 0.52), "light_energy": 0.3},
+}
+
+
+func _apply_biome_environment() -> void:
+	if not BIOME_ENV.has(biome):
+		return
+	var scene := get_tree().current_scene if get_tree() else null
+	if scene == null:
+		return
+	var cfg: Dictionary = BIOME_ENV[biome]
+	var env := scene.find_child("WorldEnvironment", true, false)
+	if env and "volumetric_enabled" in env:
+		for k in cfg:
+			if k in env:
+				env.set(k, cfg[k])
+		env.remove_meta("gfx_ambient")
+	for n in scene.find_children("*", "DirectionalLight3D", true, false):
+		var d := n as DirectionalLight3D
+		d.light_color = cfg.light_color
+		d.light_energy = cfg.light_energy
+		d.remove_meta("gfx_energy")
+	Graphics.apply()
+
+
 func _ready() -> void:
 	_rebuild()
 	if not Engine.is_editor_hint():
 		Game.level = self
+		_apply_biome_environment.call_deferred()
 
 
 ## Reveal the region at `p` and its neighbours on the minimap.
@@ -307,10 +344,11 @@ func _rebuild() -> void:
 	discovered.clear()
 	generated = not Engine.is_editor_hint() and Profile.dive_layout == "complex"
 	if generated:
-		layout = ComplexGen.new().generate(Profile.dive_seed, Profile.dive_floor, Profile.dive_floors, Profile.dive_depth)
+		layout = ComplexGen.new().generate(Profile.dive_seed, Profile.dive_floor, Profile.dive_floors, Profile.dive_depth, Profile.dive_destination)
 		rooms = layout.rooms
 		bridges = layout.bridges
 		floor_name = layout.name
+		biome = layout.get("biome", "abyss")
 		is_final_floor = layout.final
 		player_start = layout.player_start
 		lift_position = layout.arrival
@@ -322,6 +360,7 @@ func _rebuild() -> void:
 		rooms = ROOMS
 		bridges = BRIDGES
 		floor_name = "First Dive"
+		biome = "abyss"
 		is_final_floor = true
 
 	_kit = LevelKit.new(self)
@@ -342,7 +381,15 @@ func _rebuild() -> void:
 		_build_rooms()
 	_build_bridges()
 	_finish_spawn_edges()
-	_kit.void_dressing(bounds, void_fog_top, void_fog_density, void_fog_albedo, void_fog_emission)
+	match biome:
+		"space":
+			_kit.space_dressing(bounds)
+		"lava":
+			_kit.lava_dressing(bounds, void_fog_top)
+			for sp in layout.get("smoke", []):
+				_kit.smoke(sp)
+		_:
+			_kit.void_dressing(bounds, void_fog_top, void_fog_density, void_fog_albedo, void_fog_emission)
 	_kit.flush_batches()
 	_blockers.append_array(_kit.blockers)
 	if not Engine.is_editor_hint():
@@ -580,12 +627,31 @@ func _build_bridges() -> void:
 					along_x = e.axis == &"x"
 					break
 		_kit.bridge(r, along_x, b.get("solid", false))
+		if b.get("walled", false):
+			_corridor_walls(r, along_x)
+			continue
 		if along_x:
 			_kit.rail_run(Vector3(r.position.x, 0, r.position.y), Vector3(r.end.x, 0, r.position.y), Vector3.BACK, lamp_c, i % 2 == 0)
 			_kit.rail_run(Vector3(r.position.x, 0, r.end.y), Vector3(r.end.x, 0, r.end.y), Vector3.FORWARD, lamp_c, i % 2 == 1)
 		else:
 			_kit.rail_run(Vector3(r.position.x, 0, r.position.y), Vector3(r.position.x, 0, r.end.y), Vector3.RIGHT, lamp_c, i % 2 == 0)
 			_kit.rail_run(Vector3(r.end.x, 0, r.position.y), Vector3(r.end.x, 0, r.end.y), Vector3.LEFT, lamp_c, i % 2 == 1)
+
+
+## A walled corridor inside an interior section: a tall wall on the far side
+## (north or west), a low one on the camera side, no railings and no void.
+func _corridor_walls(r: Rect2, along_x: bool) -> void:
+	var t := 0.4
+	if along_x:
+		_kit.wall(Vector3(r.position.x, 0, r.position.y - t * 0.5), Vector3(r.end.x, 0, r.position.y - t * 0.5), 3.2, t)
+		_kit.wall(Vector3(r.position.x, 0, r.end.y + t * 0.5), Vector3(r.end.x, 0, r.end.y + t * 0.5), ComplexGen.FILL_HEIGHT, t)
+		minimap_solids.append(Rect2(r.position.x, r.position.y - t, r.size.x, t))
+		minimap_solids.append(Rect2(r.position.x, r.end.y, r.size.x, t))
+	else:
+		_kit.wall(Vector3(r.position.x - t * 0.5, 0, r.position.y), Vector3(r.position.x - t * 0.5, 0, r.end.y), 3.2, t)
+		_kit.wall(Vector3(r.end.x + t * 0.5, 0, r.position.y), Vector3(r.end.x + t * 0.5, 0, r.end.y), ComplexGen.FILL_HEIGHT, t)
+		minimap_solids.append(Rect2(r.position.x - t, r.position.y, t, r.size.y))
+		minimap_solids.append(Rect2(r.end.x, r.position.y, t, r.size.y))
 
 
 func _hole_rails(h: Rect2, color := Color("ffae45")) -> void:
@@ -683,8 +749,14 @@ func _build_generated_rooms() -> void:
 		var lamp_c: Color = room.lamp
 		var tint: Color = room.get("floor_tint", Color(0, 0, 0, 0))
 		var fm: Material = _kit.floor_variant(tint) if tint.a > 0.0 else null
+		var interior: bool = room.get("interior", false)
 		# Walled sides get no railing (the wall props stand there instead).
 		var openings := _openings_for(r)
+		if interior:
+			for side in ["n", "s", "w", "e"]:
+				var full_lo2 := r.position.x if side == "n" or side == "s" else r.position.y
+				var full_hi2 := r.end.x if side == "n" or side == "s" else r.end.y
+				openings.append({"side": StringName(side), "lo": full_lo2, "hi": full_hi2})
 		for side in room.get("walls", []):
 			var full_lo := r.position.x if side == "n" or side == "s" else r.position.y
 			var full_hi := r.end.x if side == "n" or side == "s" else r.end.y
@@ -733,9 +805,28 @@ func _build_generated_rooms() -> void:
 				_kit.deck(r, fm)
 				_kit.rails_around(r, openings, lamp_c)
 		for side in room.get("walls", []):
+			if interior:
+				continue  # drawn from the wall segments below
 			var a := Vector3(r.position.x, 0, r.position.y)
 			var b := Vector3(r.end.x, 0, r.position.y) if side == "n" else Vector3(r.position.x, 0, r.end.y)
 			minimap_solids.append(Rect2(Vector2(a.x, a.z), Vector2(b.x - a.x, b.z - a.z)).grow(0.25).abs())
+	# Interior sections: low walls on the camera side and the solid structure
+	# that fills the gaps between rooms.
+	for lw in layout.get("low_walls", []):
+		var a: Vector3 = lw[0]
+		var b: Vector3 = lw[1]
+		_kit.wall(a, b, ComplexGen.FILL_HEIGHT, 0.4)
+		minimap_solids.append(Rect2(Vector2(a.x, a.z), Vector2(b.x - a.x, b.z - a.z)).grow(0.25).abs())
+	var fill_mat: Material = null
+	var fill_trim: Material = null
+	if biome == "space":
+		fill_mat = _kit.std(Color("2a2f36"), 0.55, 0.45)
+		fill_trim = _kit.mats.red_light
+	elif biome == "lava":
+		fill_mat = _kit.std(Color("1d1815"), 0.65, 0.6)
+	for f in layout.get("fills", []):
+		_kit.structure_fill(f, ComplexGen.FILL_HEIGHT, fill_mat, fill_trim)
+		minimap_solids.append(f)
 	for pr in layout.props:
 		Props.place(_kit, pr.name, pr.pos, pr.yaw, pr.scale, pr.tint)
 	for wl in layout.wall_lights:

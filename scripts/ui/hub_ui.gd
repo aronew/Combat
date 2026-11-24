@@ -20,6 +20,12 @@ var open_panel := ""
 var selected := {}  ## {"source": "stash"/"equipped", "item": {...}}
 var stash_filter := "all"
 var depth_choice := 1
+var dest_choice := "deepworks"
+const DEST_BRIEFS := {
+	"deepworks": ["OPERATION: DEEP DESCENT", "Get down through the Deepworks to the reactor uplink, hold it until the upload finishes, and ride back out. Gear and salvage come home only if you do."],
+	"starship": ["OPERATION: DEAD DRIFT", "A hive-infested hauler is adrift in orbit. Board it, cut down through its decks to the drive core uplink, hold it, and get off before the swarm closes in."],
+	"foundry": ["OPERATION: CRUCIBLE", "The Furnace Chasm still burns. Cross the gantries over the molten lake, work down to the furnace core uplink, and hold it while the hive pours out of the heat."],
+}
 var last_crate := {}
 
 var _theme: Theme
@@ -50,6 +56,7 @@ func _ready() -> void:
 	Profile.changed.connect(_refresh_hud)
 	_refresh_hud()
 	depth_choice = Profile.data.max_depth
+	dest_choice = Profile.dive_destination
 	_connect_stations.call_deferred()
 	Input.mouse_mode = Input.MOUSE_MODE_HIDDEN
 	if not Profile.last_result.is_empty():
@@ -390,9 +397,18 @@ func _build_augments() -> void:
 # ---------------- CONTRACTS ----------------
 
 func _build_contracts() -> void:
-	var v := _make_panel("CONTRACTS", Vector2(1000, 640))
-	v.add_child(_lbl("OPERATION: DEEP DESCENT", 26, Palette.HUD_WHITE, _font_title))
-	var brief := _lbl("Get down through the Deepworks to the reactor uplink, hold it until the upload finishes, and ride back out. Gear and salvage come home only if you do.", 18, DIM, _font)
+	var v := _make_panel("CONTRACTS", Vector2(1000, 700))
+	v.add_child(_lbl("DESTINATION", 18, DIM, _font_bold))
+	var drow := HBoxContainer.new()
+	drow.add_theme_constant_override("separation", 10)
+	v.add_child(drow)
+	for key in ["deepworks", "starship", "foundry"]:
+		var db := _btn(String(ComplexGen.DESTINATIONS[key].name).to_upper(), _on_dest.bind(key), Vector2(220, 48))
+		if key == dest_choice:
+			db.add_theme_stylebox_override("normal", _box(Color(0.06, 0.25, 0.28, 0.95), ACCENT, 2, 8))
+		drow.add_child(db)
+	v.add_child(_lbl(DEST_BRIEFS[dest_choice][0], 26, Palette.HUD_WHITE, _font_title))
+	var brief := _lbl(DEST_BRIEFS[dest_choice][1], 18, DIM, _font)
 	brief.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	v.add_child(brief)
 	v.add_child(_lbl("DEPTH", 18, DIM, _font_bold))
@@ -416,7 +432,7 @@ func _build_contracts() -> void:
 	var rooms := 0
 	for f in floors:
 		rooms += ComplexGen.room_count(d, f)
-	var cl := _lbl("The Deepworks complex: %d floors, about %d rooms. Throw the breakers to power each cargo lift down; the uplink is on the bottom floor. Extract on the lift you rode down." % [floors, rooms], 17, Color(1, 1, 1, 0.85), _font)
+	var cl := _lbl("%s: %d floors, about %d rooms. Throw the breakers to power each cargo lift down; the uplink is on the bottom floor. Extract on the lift you rode down." % [ComplexGen.DESTINATIONS[dest_choice].name, floors, rooms], 17, Color(1, 1, 1, 0.85), _font)
 	cl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	v.add_child(cl)
 	v.add_child(_lbl("Record: %d dives  ·  %d extractions  ·  best haul %d" % [Profile.data.dives, Profile.data.extractions, Profile.data.best_haul], 16, DIM, _font))
@@ -469,13 +485,18 @@ func _on_perk(id: String) -> void:
 	_rebuild_open()
 
 
+func _on_dest(key: String) -> void:
+	dest_choice = key
+	_rebuild_open()
+
+
 func _on_depth(d: int) -> void:
 	depth_choice = d
 	_rebuild_open()
 
 
 func deploy(depth: int, layout := "complex") -> void:
-	Profile.start_dive(depth, layout)
+	Profile.start_dive(depth, layout, dest_choice)
 	close()
 	Game.go_to_scene("res://scenes/dive.tscn")
 
