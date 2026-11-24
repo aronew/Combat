@@ -3,7 +3,7 @@ extends Node3D
 ## Pre-instantiates projectiles once and recycles them (no allocation while firing).
 
 @export var projectile_scene: PackedScene = preload("res://scenes/projectile.tscn")
-@export var pool_size := 160
+@export var pool_size := 220
 
 var _pool: Array[Projectile] = []
 var _next := 0
@@ -18,7 +18,8 @@ func _ready() -> void:
 		_pool.append(p)
 
 
-func fire(origin: Vector3, direction: Vector3, speed: float, damage: float, lifetime: float, knockback: float) -> Projectile:
+## payload: see Projectile (damage, knockback, pierce, crit, elements, blast, color...).
+func fire(origin: Vector3, direction: Vector3, speed: float, lifetime: float, payload: Dictionary) -> Projectile:
 	# Round-robin search for a free bolt; if all are in flight, recycle the oldest.
 	var p: Projectile = null
 	for i in _pool.size():
@@ -30,7 +31,7 @@ func fire(origin: Vector3, direction: Vector3, speed: float, damage: float, life
 	if p == null:
 		p = _pool[_next]
 		_next = (_next + 1) % _pool.size()
-	p.launch(origin, direction, speed, damage, lifetime, knockback)
+	p.launch(origin, direction, speed, lifetime, payload)
 	return p
 
 

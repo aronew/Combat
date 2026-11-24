@@ -20,6 +20,8 @@ signal radio(speaker: String, text: String)
 signal banner(title: String, subtitle: String)
 signal elite_changed(enemy: Node)
 signal mission_ended(success: bool, summary: Dictionary)
+signal loot_picked(item: Dictionary)
+signal level_up(level: int)
 
 # Scene references (each node registers itself in _ready).
 var player: Player
@@ -134,7 +136,7 @@ func explode(pos: Vector3, radius: float, enemy_damage: float, player_damage: fl
 			var fall := 1.0 - clampf(d.length() / radius, 0.0, 1.0) * 0.5
 			var dir := d.normalized() if d.length() > 0.01 else Vector3.FORWARD
 			e.take_hit(enemy_damage * fall, dir, knockback * fall, TEAM_NEUTRAL, &"explosion")
-	if player and player.alive:
+	if player and player.alive and player_damage > 0.0:
 		var dp := player.global_position - pos
 		dp.y = 0.0
 		if dp.length() < radius * 0.85:
@@ -172,6 +174,32 @@ func _tick_delayed(delta: float) -> void:
 		explode(a[0], a[1], a[2], a[3], a[4], a[5] if is_instance_valid(a[5]) else null, a[6])
 
 
+## Every enemy death passes through here: XP and loot (Mission), legendary
+## procs (Player). `kind` is what killed it (bullet, slash, explosion...).
+func on_enemy_killed(e: Enemy, pos: Vector3, kind: StringName) -> void:
+	if mission:
+		mission.on_enemy_killed(e, pos, kind)
+	if player and player.alive:
+		player.on_kill(e, pos, kind)
+
+
+## Shock element: arcs from `source` to up to `count` nearby bugs.
+func shock_chain(source: Enemy, damage: float, count: int) -> void:
+	if spawner == null or not is_instance_valid(source):
+		return
+	var from := source.global_position
+	var others: Array = []
+	for e in spawner.enemies_in_radius(from, 4.5):
+		if e != source and e.is_active():
+			others.append(e)
+	others.sort_custom(func(a, b): return a.global_position.distance_squared_to(from) < b.global_position.distance_squared_to(from))
+	for i in mini(count, others.size()):
+		var t: Enemy = others[i]
+		if fx:
+			fx.lightning(from + Vector3.UP * 0.6, t.global_position + Vector3.UP * 0.6)
+		t.take_hit(damage, (t.global_position - from).normalized(), 2.0, TEAM_PLAYER, &"shock")
+
+
 # --------------------------------------------------------------------------
 # Run flow
 # --------------------------------------------------------------------------
@@ -197,3 +225,10 @@ func restart() -> void:
 	_base_time_scale = 1.0
 	Engine.time_scale = 1.0
 	get_tree().reload_current_scene()
+
+
+func go_to_scene(path: String) -> void:
+	_hitstop_end_usec = 0
+	_base_time_scale = 1.0
+	Engine.time_scale = 1.0
+	get_tree().change_scene_to_file(path)

@@ -53,6 +53,10 @@ const ALERT_COLORS := [Color("2fd1c4"), Color("ffd23d"), Color("ff8a1e"), Color(
 @onready var res_stats: Label = $Results/Box/Stats
 @onready var res_bank: Label = $Results/Box/Bank
 @onready var res_hint: Label = $Results/Box/Hint
+@onready var res_loot: Label = $Results/Box/Loot
+@onready var level_label: Label = $Health/Level
+@onready var xp_fill: ColorRect = $Health/XPFill
+@onready var toasts: VBoxContainer = $Toasts
 
 var _hurt := 0.0
 var _low_pulse := 0.0
@@ -62,6 +66,7 @@ var _banner_tween: Tween
 var _combo_tween: Tween
 var _radio_tween: Tween
 var _salvage_tween: Tween
+var _toast_font: Font
 
 
 func _ready() -> void:
@@ -87,6 +92,8 @@ func _ready() -> void:
 	Game.elite_changed.connect(_on_elite)
 	Game.mission_ended.connect(_on_mission_ended)
 	Game.weapon_changed.connect(_on_weapon)
+	Game.loot_picked.connect(_on_loot_picked)
+	Game.level_up.connect(func(_l): _update_xp())
 	if hide_os_cursor:
 		Input.mouse_mode = Input.MOUSE_MODE_HIDDEN
 	kills_label.text = "KILLS  0"
@@ -95,6 +102,30 @@ func _ready() -> void:
 	_on_weapon(Player.Weapon.RIFLE)
 	if Game.player:
 		_on_health(Game.player.health, Game.player.max_health)
+	_update_xp()
+
+
+func _update_xp() -> void:
+	level_label.text = "LV %d" % Profile.data.level
+	xp_fill.size.x = 394.0 * Profile.xp_progress()
+
+
+func _on_loot_picked(item: Dictionary) -> void:
+	var l := Label.new()
+	l.text = "◆  %s  ·  %s %s" % [item.name, Loot.RARITY_NAMES[int(item.rarity)].to_upper(), Loot.kind_label(item).to_upper()]
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_label(l, _toast_font, 19, Loot.color(item), 5)
+	toasts.add_child(l)
+	toasts.move_child(l, 0)
+	var t := create_tween().set_ignore_time_scale(true)
+	l.modulate.a = 0.0
+	t.tween_property(l, "modulate:a", 1.0, 0.15)
+	t.tween_interval(4.0)
+	t.tween_property(l, "modulate:a", 0.0, 0.6)
+	t.tween_callback(l.queue_free)
+	while toasts.get_child_count() > 6:
+		toasts.get_child(toasts.get_child_count() - 1).queue_free()
+		break
 
 
 func _exit_tree() -> void:
@@ -131,6 +162,7 @@ func _process(delta: float) -> void:
 # --------------------------------------------------------------------------
 
 func _on_health(current: float, maximum: float) -> void:
+	_update_xp()
 	_health_ratio = current / maximum if maximum > 0.0 else 0.0
 	health_value.text = str(ceili(current))
 	health_max.text = " / %d" % roundi(maximum)
@@ -235,10 +267,19 @@ func _on_elite(enemy: Node) -> void:
 
 func _on_weapon(weapon: int) -> void:
 	var rifle := weapon == Player.Weapon.RIFLE
-	rifle_chip.modulate = Color(1, 1, 1, 1.0 if rifle else 0.35)
-	blade_chip.modulate = Color(1, 1, 1, 1.0 if not rifle else 0.35)
-	rifle_chip.text = ("▶ " if rifle else "   ") + "RIFLE  ·  LOUD"
-	blade_chip.text = ("▶ " if not rifle else "   ") + "BLADE  ·  QUIET"
+	rifle_chip.modulate = Color(1, 1, 1, 1.0 if rifle else 0.4)
+	blade_chip.modulate = Color(1, 1, 1, 1.0 if not rifle else 0.4)
+	var p := Game.player
+	var gun_name := p.get_gun_name() if p else "Rifle"
+	var blade_name := p.get_blade_name() if p else "Blade"
+	var noise := "LOUD"
+	if p and not p.gun.is_empty():
+		noise = "LOUD" if float(p.gun.noise) >= 1.0 else "QUIETER"
+	rifle_chip.text = ("▶ " if rifle else "   ") + "%s  ·  %s" % [gun_name.to_upper(), noise]
+	blade_chip.text = ("▶ " if not rifle else "   ") + "%s  ·  QUIET" % blade_name.to_upper()
+	if p:
+		rifle_chip.add_theme_color_override("font_color", Loot.color(p.gun_item))
+		blade_chip.add_theme_color_override("font_color", Loot.color(p.blade_item))
 
 
 func _on_kills(kills: int, combo: int) -> void:
@@ -275,7 +316,23 @@ func _on_mission_ended(success: bool, s: Dictionary) -> void:
 	else:
 		res_bank.text = "◆  %d SALVAGE LOST   ·   BANKED %d" % [s.haul, s.banked]
 		res_bank.add_theme_color_override("font_color", Palette.HUD_DANGER)
-	res_hint.text = "PRESS  R  TO DIVE AGAIN"
+	var items: Array = s.get("items", [])
+	var loot_lines: PackedStringArray = []
+	for it in items:
+		loot_lines.append("%s (%s)" % [it.name, Loot.RARITY_NAMES[int(it.rarity)]])
+	if items.is_empty():
+		res_loot.text = "NO GEAR FOUND"
+		res_loot.add_theme_color_override("font_color", Color(1, 1, 1, 0.6))
+	else:
+		res_loot.text = ("GEAR RECOVERED:  " if success else "GEAR LOST:  ") + "   ·   ".join(loot_lines)
+		res_loot.add_theme_color_override("font_color", Palette.NEON_CYAN if success else Palette.HUD_DANGER)
+	var lvl_text := "   ·   +%d XP" % int(s.get("xp", 0))
+	if int(s.get("levels", 0)) > 0:
+		lvl_text += "   ·   LEVEL UP → %d" % int(s.get("level", 1))
+	if int(s.get("unlocked", 0)) > 0:
+		lvl_text += "   ·   DEPTH %d UNLOCKED" % int(s.unlocked)
+	res_stats.text += lvl_text
+	res_hint.text = "[E]  RETURN TO THE RIG        [R]  DIVE AGAIN"
 	results.visible = true
 	results.modulate.a = 0.0
 	res_title.pivot_offset = res_title.size * 0.5
@@ -343,3 +400,6 @@ func _style() -> void:
 	_label(res_stats, num_italic, 22, Color(1, 1, 1, 0.8), 6)
 	_label(res_bank, num_bold, 28, Palette.NEON_YELLOW, 6)
 	_label(res_hint, num_bold, 28, Palette.NEON_CYAN, 6)
+	_label(res_loot, num_bold, 22, Palette.NEON_CYAN, 6)
+	_label(level_label, num_bold, 20, Color("ffd23d"), 5)
+	_toast_font = num_bold
