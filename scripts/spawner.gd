@@ -11,9 +11,9 @@ extends Node3D
 @export var swarmer_scene: PackedScene = preload("res://scenes/enemies/swarmer.tscn")
 @export var swarmer_pool := 200
 @export var burster_scene: PackedScene = preload("res://scenes/enemies/burster.tscn")
-@export var burster_pool := 30
+@export var burster_pool := 40
 @export var shield_scene: PackedScene = preload("res://scenes/enemies/shield_bug.tscn")
-@export var shield_pool := 14
+@export var shield_pool := 24
 @export var turret_scene: PackedScene = preload("res://scenes/enemies/sentry_turret.tscn")
 @export var max_alive := 170
 
@@ -74,7 +74,9 @@ func spawn(type: StringName, mode: StringName, pos: Vector3, opts := {}) -> void
 
 func spawn_now(type: StringName, mode: StringName, pos: Vector3, opts := {}) -> Enemy:
 	var placed := mode == &"dormant" or mode == &"patrol"
-	if not placed and active.size() >= max_alive and opts.get("tier", 0) < Enemy.Tier.PURPLE:
+	if not placed and active.size() >= max_alive + 60 and opts.get("tier", 0) < Enemy.Tier.PURPLE:
+		return null
+	if not placed and engaged_count() >= max_alive and opts.get("tier", 0) < Enemy.Tier.PURPLE:
 		return null
 	var free: Array = _pools.get(type, [])
 	if free.is_empty():
@@ -120,6 +122,16 @@ func release(e: Enemy) -> void:
 
 func alive_count() -> int:
 	return active.size() + _pending.size()
+
+
+## Bugs that are awake and fighting (plus pending spawns). Sleeping and patrolling
+## bugs elsewhere on a big floor don't count against the wave caps.
+func engaged_count() -> int:
+	var n := _pending.size()
+	for e in active:
+		if not e.is_unaware():
+			n += 1
+	return n
 
 
 func _physics_process(delta: float) -> void:

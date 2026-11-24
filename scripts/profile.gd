@@ -24,14 +24,26 @@ var dive_bag: Array = []
 var dive_xp := 0
 var dive_levels := 0
 var last_result := {}
+## Dive layout: "complex" (generated multi-floor dive) or "classic" (the small test level).
+var dive_layout := "complex"
+var dive_seed := 0
+var dive_floor := 0
+var dive_floors := 1
+## True from start_dive until the dive is banked or lost (floor changes keep it going).
+var dive_active := false
+## State carried from one floor to the next (haul, health, kills, alert...).
+var dive_carry := {}
 ## Dev/test switch: when false nothing is written to disk (autoplay --gear runs).
 var persist := true
 
 var _stats_cache := {}
 
 
-func _ready() -> void:
-	load_profile()
+## Loaded on entering the tree (not _ready) so the first scene's _enter_tree
+## (which sets up the dive before the Level builds) already sees the save.
+func _enter_tree() -> void:
+	if data.is_empty():
+		load_profile()
 
 
 func defaults() -> Dictionary:
@@ -232,8 +244,15 @@ func buy_crate(kind: String) -> Dictionary:
 # Dives
 # --------------------------------------------------------------------------
 
-func start_dive(depth: int) -> void:
+func start_dive(depth: int, layout := "") -> void:
 	dive_depth = clampi(depth, 1, data.max_depth)
+	if layout != "":
+		dive_layout = layout
+	dive_seed = randi()
+	dive_floor = 0
+	dive_floors = ComplexGen.floor_count(dive_depth) if dive_layout == "complex" else 1
+	dive_active = true
+	dive_carry = {}
 	dive_bag.clear()
 	dive_xp = 0
 	dive_levels = 0
@@ -255,6 +274,8 @@ func bank_dive(haul: int) -> Dictionary:
 		data.max_depth += 1
 		result.unlocked = data.max_depth
 	dive_bag.clear()
+	dive_active = false
+	dive_carry = {}
 	last_result = result
 	save()
 	_touch()
@@ -266,6 +287,8 @@ func lose_dive(haul: int) -> Dictionary:
 	var result := {"success": false, "haul": haul, "items": dive_bag.duplicate(), "xp": dive_xp, "levels": dive_levels, "depth": dive_depth}
 	data.dives += 1
 	dive_bag.clear()
+	dive_active = false
+	dive_carry = {}
 	last_result = result
 	save()
 	_touch()

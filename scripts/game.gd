@@ -22,6 +22,7 @@ signal elite_changed(enemy: Node)
 signal mission_ended(success: bool, summary: Dictionary)
 signal loot_picked(item: Dictionary)
 signal level_up(level: int)
+signal blade_chain_changed(count: int)
 
 # Scene references (each node registers itself in _ready).
 var player: Player
@@ -46,8 +47,16 @@ var combo_window := 1.6
 
 var _combo_timer := 0.0
 var _hitstop_end_usec := 0
+var _hitstop_scale := 0.03
+var _slowmo_end_usec := 0
+var _slowmo_scale := 1.0
 var _base_time_scale := 1.0
 var _delayed: Array[Dictionary] = []
+## True while fading between scenes (floor changes).
+var transitioning := false
+var _fade_layer: CanvasLayer
+var _fade: ColorRect
+var _fade_title: Label
 
 
 func _ready() -> void:
@@ -75,15 +84,20 @@ func reset_run() -> void:
 	is_game_over = false
 	_combo_timer = 0.0
 	_hitstop_end_usec = 0
+	_slowmo_end_usec = 0
 	_base_time_scale = 1.0
 	Engine.time_scale = 1.0
 
 
 func _process(delta: float) -> void:
-	# Hitstop runs on real time so it ends even while Engine.time_scale is ~0.
-	if _hitstop_end_usec > 0 and Time.get_ticks_usec() >= _hitstop_end_usec:
-		_hitstop_end_usec = 0
-		Engine.time_scale = _base_time_scale
+	# Hitstop and slow-mo run on real time so they end even while Engine.time_scale is ~0.
+	if _hitstop_end_usec > 0 or _slowmo_end_usec > 0:
+		var now := Time.get_ticks_usec()
+		if _hitstop_end_usec > 0 and now >= _hitstop_end_usec:
+			_hitstop_end_usec = 0
+		if _slowmo_end_usec > 0 and now >= _slowmo_end_usec:
+			_slowmo_end_usec = 0
+		Engine.time_scale = _current_time_scale()
 	if combo > 0 and not is_game_over:
 		_combo_timer -= delta
 		if _combo_timer <= 0.0:
@@ -102,7 +116,27 @@ func hitstop(duration: float, scale: float = 0.03) -> void:
 		return
 	var end := Time.get_ticks_usec() + int(duration * 1_000_000.0)
 	_hitstop_end_usec = maxi(_hitstop_end_usec, end)
-	Engine.time_scale = minf(scale, _base_time_scale)
+	_hitstop_scale = scale
+	Engine.time_scale = _current_time_scale()
+
+
+## Slow-motion: time runs at `scale` for `duration` real seconds (hitstop still wins).
+func slowmo(duration: float, scale: float = 0.3) -> void:
+	if duration <= 0.0 or is_game_over:
+		return
+	var end := Time.get_ticks_usec() + int(duration * 1_000_000.0)
+	_slowmo_end_usec = maxi(_slowmo_end_usec, end)
+	_slowmo_scale = scale
+	Engine.time_scale = _current_time_scale()
+
+
+func _current_time_scale() -> float:
+	var s := _base_time_scale
+	if _slowmo_end_usec > 0:
+		s = minf(s, _slowmo_scale)
+	if _hitstop_end_usec > 0:
+		s = minf(s, _hitstop_scale)
+	return s
 
 
 func shake(trauma: float) -> void:
@@ -215,20 +249,65 @@ func end_run(success: bool) -> void:
 	if is_game_over:
 		return
 	is_game_over = true
+	_slowmo_end_usec = 0
 	if not success:
 		_base_time_scale = 0.35  # dramatic slow-mo under the results screen
-		Engine.time_scale = _base_time_scale
+	Engine.time_scale = _current_time_scale()
 
 
 func restart() -> void:
 	_hitstop_end_usec = 0
+	_slowmo_end_usec = 0
 	_base_time_scale = 1.0
 	Engine.time_scale = 1.0
 	get_tree().reload_current_scene()
 
 
+## Fade to black, change scene, fade back in (used between dive floors).
+func transition_to(path: String, title := "", sub := "") -> void:
+	if transitioning:
+		return
+	transitioning = true
+	_ensure_fade()
+	_fade_title.text = title + ("\n" + sub if sub != "" else "")
+	var t := create_tween().set_ignore_time_scale(true)
+	t.tween_property(_fade, "color:a", 1.0, 0.5)
+	t.parallel().tween_property(_fade_title, "modulate:a", 1.0, 0.5)
+	t.tween_interval(0.5)
+	t.tween_callback(go_to_scene.bind(path))
+	t.tween_interval(0.6)
+	t.tween_property(_fade, "color:a", 0.0, 0.7)
+	t.parallel().tween_property(_fade_title, "modulate:a", 0.0, 0.7)
+	t.tween_callback(func() -> void: transitioning = false)
+
+
+func _ensure_fade() -> void:
+	if _fade_layer:
+		return
+	_fade_layer = CanvasLayer.new()
+	_fade_layer.layer = 90
+	add_child(_fade_layer)
+	_fade = ColorRect.new()
+	_fade.color = Color(0.0, 0.01, 0.02, 0.0)
+	_fade.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_fade.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_fade_layer.add_child(_fade)
+	_fade_title = Label.new()
+	_fade_title.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_fade_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_fade_title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_fade_title.add_theme_font_size_override("font_size", 46)
+	_fade_title.add_theme_color_override("font_color", Color("19f4ff"))
+	_fade_title.add_theme_constant_override("outline_size", 10)
+	_fade_title.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
+	_fade_title.modulate.a = 0.0
+	_fade_title.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_fade_layer.add_child(_fade_title)
+
+
 func go_to_scene(path: String) -> void:
 	_hitstop_end_usec = 0
+	_slowmo_end_usec = 0
 	_base_time_scale = 1.0
 	Engine.time_scale = 1.0
 	get_tree().change_scene_to_file(path)

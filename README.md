@@ -18,7 +18,7 @@ Walk up to a station and press **E** (Esc or E closes the panel):
 | Armory | Equipped gear and your stash. Compare any item against what you're wearing (DPS change or per-stat green/red), equip, unequip armour, scrap for salvage |
 | Fabricator | Spend salvage on sealed crates (Field / Armory / Elite) |
 | Augments | Spend perk points (one per level) on 12 permanent perks |
-| Contracts | Pick a depth (1–5, unlocked by extracting) and deploy |
+| Contracts | Pick a depth (1–5, unlocked by extracting) and deploy, or try the small one-floor test level |
 | Test range | Training dummies with a live DPS readout to try new gear |
 
 ### Gear
@@ -62,17 +62,51 @@ Elements from stats: **burn** (damage over time), **shock** (arcs to 2 bugs), **
 
 The profile is saved as JSON at `user://combat_profile.json`.
 
-## The dive: "First Dive"
+## The dive: "Deep Descent"
 
-You drop into a mining megastructure over the abyss to steal data from the reactor uplink.
+You drop into the Deepworks, a mining complex hanging over the abyss, to steal data from the
+reactor uplink on its bottom floor. Every dive generates a new complex: rooms joined by catwalks
+over the void, branching with dead ends and loops, so there's always somewhere to run.
 
-1. **Infiltrate.** Five rooms: Drop Lift, Catwalk Deck, Switchgear Gallery, Pressure Lock, Reactor Ring.
-   Bugs sleep and patrol. The **blade is quiet**; sleeping bugs, and patrolling bugs hit from
-   behind, die silently. The **rifle is loud**: gunfire raises the hive alert meter.
-2. **Uplink.** Start it at the terminal (E). The alarm wakes the station and you hold the zone
-   while it uploads. Waves leap up from the void, burrow up, drop from above and crawl out of
-   nests. A **purple elite** arrives halfway through.
-3. **Extract.** Fight back to the lift you dropped in on and hold the pad until it arrives.
+| Depth | Floors | Rooms (about) | Size vs. the old test level |
+|---|---|---|---|
+| 1 | 2 | 23 | ~5x |
+| 3 | 3 | 42 | ~10x |
+| 5 | 4 | 63 | ~15x |
+
+Each floor has a theme (Upper Decks, Switchgear Halls, Pump Works, Hive Foundry, and the
+Reactor Core at the bottom) and a mix of room types: open decks, halls built around switchgear
+blocks, pressure locks split by a bulkhead with a blast door, and rings around open shafts.
+
+1. **Infiltrate, floor by floor.** The cargo lifts are dead: find and throw the **breakers**
+   (yellow squares on the map; 1 on the first floor, 2 below) to power the floor's cargo lift,
+   then ride it down. Breakers are loud. Bugs sleep and patrol. The **blade is quiet**:
+   sleeping bugs, and patrolling bugs hit from behind, die silently. The **rifle is loud**:
+   gunfire raises the hive alert meter. Your haul, health and some of the alert carry down with
+   you (you patch up 25% on the ride).
+2. **Uplink.** On the bottom floor, start it at the terminal (E). The alarm wakes the station
+   and you hold the zone while it uploads. Waves leap up from the void, burrow up, drop from
+   above and crawl out of nests. A **purple elite** arrives halfway through.
+3. **Extract.** Fight back to the lift you rode down on and hold the pad until it lifts off.
+
+**Map:** the corner map follows you and shows what you've explored (an arrow on its edge points
+to the objective). Press **M** for the whole floor: explored areas, plus faint outlines of the
+rest so you can plan a route.
+
+The small hand-built **test level** (Drop Lift, Catwalk Deck, Switchgear Gallery, Pressure Lock,
+Reactor Ring) is still there: Contracts → *Test level*.
+
+### The blade
+The blade is built to flow from bug to bug:
+- **Target assist:** a swing snaps to the best bug in front of you (within about 6.5 m).
+- **Dash-strike:** if that bug is out of reach, you zip to it (invincible while moving) and
+  cut on arrival. About one every 0.6 s, twice as often while your chain is 3 or more.
+- **Blade chain:** hits within 1.5 s of each other build a chain (shown under the combo):
+  +8% damage per link up to +80%, and longer dash-strikes from 3 links.
+- **Counter:** cut a bug while it rears up to bite and it's a **COUNTER**: x3.5 damage that
+  goes straight through shield bugs' shields, a moment of slow-motion and a little health back.
+- The 3-hit combo ends in a wide spin. Silent kills on unaware bugs and turret-beam parries
+  still work.
 
 **Health:** green orbs drop from kills (more often from tougher bugs, three from elites, two from
 nests) and drift toward you only while you're hurt. You also recover slowly after about 6 s
@@ -113,6 +147,7 @@ nests (destroy them to cut off spawns).
 | Roll (i-frames) | Space or right mouse | A / RB |
 | Swap rifle / blade | Q or mouse wheel | Y |
 | Interact | E | X |
+| Map (whole floor) | M | Back |
 | After the dive: back to the Rig / dive again | E / R | X / Back |
 | Close a Rig panel | Esc or E | |
 | Fullscreen | F11 | |
@@ -137,7 +172,8 @@ godot --path . --rendering-method gl_compatibility
 scenes/          hub (the Rig, main scene), dive (the mission), level, player, camera_rig, spawner, projectile, FX scenes,
   enemies/       swarmer, burster, shield_bug, sentry_turret
 scripts/
-  level/         level.gd (rooms, region-graph nav, spawn queries), level_kit.gd (greybox builders)
+  level/         level.gd (builds a floor, region-graph nav, spawn queries), complex_gen.gd (generated floors),
+                 level_kit.gd (greybox builders)
   enemies/       enemy.gd (base: stealth states, senses, entrances, tiers) + special types
   objects/       interactable, explosive_barrel, hive_nest, laser_grid, blast_door, extraction_lift, training_dummy
   items/         loot.gd (item tables, generation, tooltips), player_stats.gd, perks.gd, loot_drop.gd
@@ -145,7 +181,8 @@ scripts/
   ui/            hud + widgets (alert meter, minimap, objective marker, boss bar, ...)
   shaders/
   game.gd + profile.gd (autoloads), mission.gd, hive_director.gd, spawner.gd, player.gd, fx.gd, pickups.gd
-tests/           test_loot.gd (items/stats/save), test_hub.gd (stations, every weapon on the range, deploy)
+tests/           test_loot.gd (items/stats/save), test_hub.gd (stations, every weapon on the range, deploy),
+                 test_complex.gd (generates hundreds of floors: reachability, placements, sizes)
 ui/              hud.tscn
 assets/          models (.glb from art_src/) and shared materials
 art_src/         Blender Python scripts that build the models
@@ -167,7 +204,9 @@ reference/       concept art (ignored by the importer via .gdignore)
 | Level | lamp colours per room, hive glow, void fog |
 | WorldEnvironment / CameraRig | fog, glow, grading / framing, follow, shake |
 
-The level layout itself (room rects, bridges, placements) is data at the top of `scripts/level/level.gd`.
+Generated floors: `scripts/level/complex_gen.gd` (floors and rooms per depth, themes, room
+sizes, how many nests/turrets/laser fences, population density). The hand-built test level's
+layout is data at the top of `scripts/level/level.gd`.
 
 ## Dev helper
 
@@ -177,7 +216,9 @@ The level layout itself (room rects, bridges, placements) is data at the top of 
 godot --path . res://scenes/dive.tscn -- --autoplay --god
 ```
 
-Flags: `--god`, `--stealth` (uses the blade on sleepers), `--skip-to=uplink`, `--depth=N`,
+Flags: `--god`, `--stealth` (uses the blade on sleepers), `--blade` (fights with the blade),
+`--skip-to=uplink` (jumps to the bottom floor), `--depth=N`, `--classic` (the small test level),
+`--seed=N` and `--floor=N` (a specific complex and floor), `--map-at=SECONDS` (opens the map),
 `--gear=legendary|epic|random` (or `legendary:overclock`, `epic:shock` to force one effect;
 test gear is never saved), `--fresh` (a brand-new level 1 character with starter gear, not saved), `--loot-demo`, `--shots=DIR`, `--shot-times=a,b,c`,
 `--quit-after=SECONDS`, `--test-restart`. Every 2 s it prints FPS, frame times, phase, alert,
@@ -191,4 +232,8 @@ godot --headless --path . --script res://tests/test_loot.gd
 
 ```bash
 godot --headless --path . --script res://tests/test_hub.gd
+```
+
+```bash
+godot --headless --path . --script res://tests/test_complex.gd
 ```

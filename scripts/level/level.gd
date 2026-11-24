@@ -1,9 +1,14 @@
 @tool
 class_name Level
 extends Node3D
-## "First Dive": five hand-built rooms connected by catwalks over the void.
+## One floor of a dive, built from primitives at load (and in the editor,
+## geometry only). Two layouts:
+## - "complex" (normal dives): a generated floor of the Deepworks complex
+##   (see ComplexGen): many rooms over the void; upper floors end at a cargo
+##   lift powered by breakers, the bottom floor holds the reactor uplink.
+## - "classic": the small hand-built First Dive test level:
 ##   Drop Lift -> Catwalk Deck -> Switchgear Gallery -> Pressure Lock -> Reactor Ring
-## Built from primitives at load (and in the editor, geometry only). Also owns:
+## Also owns:
 ## - a region graph (convex walkable rects + portals) that enemies use to route
 ##   between rooms (see get_nav_target), so swarms follow you through doorways;
 ## - spawn queries for the Hive Director (burrow/drop points, void leap edges);
@@ -32,8 +37,12 @@ extends Node3D
 @export_group("Void")
 @export var void_fog_density := 0.04
 @export var void_fog_top := -2.5
-@export var void_fog_albedo := Color("a8ccd2")
-@export var void_fog_emission := Color("10667a")
+## The void's colour comes from this grey albedo lit by the bluish moonlight
+## (its volumetric fog energy) and the ambient light; see the WorldEnvironment.
+@export var void_fog_albedo := Color("b6bec6")
+## Keep this black (or very dark): Godot packs fog-volume emission into a small
+## buffer, and brighter values can overflow into a bright green void.
+@export var void_fog_emission := Color("000000")
 
 const ROOMS := [
 	{"id": &"lift", "name": "Drop Lift", "rect": Rect2(-5, 12, 10, 8)},
@@ -54,6 +63,20 @@ var player_start := Vector3(0, 0, 16.5)
 var lift_position := Vector3(0, 0, 16.0)
 var lift_radius := 3.0
 var uplink_position := Vector3(36.5, 0, -64.4)
+## Generated floors: cargo lift down (upper floors only, else INF) and its breakers.
+var cargo_position := Vector3.INF
+var cargo: Interactable
+var breakers: Array[Interactable] = []
+
+## The layout being built (ROOMS/BRIDGES for classic, generated data otherwise).
+var rooms: Array = []
+var bridges: Array = []
+var generated := false
+var layout := {}
+var floor_name := "First Dive"
+var is_final_floor := true
+## Regions the player has seen (minimap fog of war on generated floors).
+var discovered := {}
 
 var regions: Array[Dictionary] = []  # {rect, room, name}
 var portals: Array[Dictionary] = []  # {a, b, center, normal (a->b), half}
@@ -83,6 +106,16 @@ func _ready() -> void:
 	_rebuild()
 	if not Engine.is_editor_hint():
 		Game.level = self
+
+
+## Reveal the region at `p` and its neighbours on the minimap.
+func discover(p: Vector3) -> void:
+	var r := region_of(p)
+	if r < 0 or discovered.has(r):
+		return
+	discovered[r] = true
+	for n in region_neighbors(r):
+		discovered[n] = true
 
 
 # ==========================================================================
@@ -246,22 +279,55 @@ func _rebuild() -> void:
 	turret_spots.clear()
 	_blockers.clear()
 
+	cargo = null
+	breakers.clear()
+	discovered.clear()
+	generated = not Engine.is_editor_hint() and Profile.dive_layout == "complex"
+	if generated:
+		layout = ComplexGen.new().generate(Profile.dive_seed, Profile.dive_floor, Profile.dive_floors, Profile.dive_depth)
+		rooms = layout.rooms
+		bridges = layout.bridges
+		floor_name = layout.name
+		is_final_floor = layout.final
+		player_start = layout.player_start
+		lift_position = layout.arrival
+		uplink_position = layout.uplink
+		cargo_position = layout.cargo
+		hive_center = layout.hive_center
+		hive_radius = 12.0
+	else:
+		rooms = ROOMS
+		bridges = BRIDGES
+		floor_name = "First Dive"
+		is_final_floor = true
+
 	_kit = LevelKit.new(self)
 	_kit.lamp_energy = lamp_energy
 	_kit.lamp_range = lamp_range
 	_kit.lamp_emission = lamp_emission
 	_kit.lamp_fog_energy = lamp_fog_energy
+	if generated:
+		_kit.lamp_spacing = 11.0
 	_kit.make_materials(hive_center, hive_radius, tile_size)
 
 	_build_regions()
-	_build_rooms()
+	if generated:
+		_build_generated_rooms()
+	else:
+		_build_rooms()
 	_build_bridges()
 	_finish_spawn_edges()
 	_kit.void_dressing(bounds, void_fog_top, void_fog_density, void_fog_albedo, void_fog_emission)
 	_blockers.append_array(_kit.blockers)
 	if not Engine.is_editor_hint():
-		_build_gameplay()
-		_build_placements()
+		if generated:
+			_build_generated_gameplay()
+			placements.assign(layout.placements)
+		else:
+			_build_gameplay()
+			_build_placements()
+			for i in regions.size():
+				discovered[i] = true
 
 
 func _add_region(rect: Rect2, room: StringName, name_: String) -> int:
@@ -280,7 +346,7 @@ func _ring_strips(o: Rect2, i: Rect2) -> Array[Rect2]:
 
 
 func _build_regions() -> void:
-	for room in ROOMS:
+	for room in rooms:
 		var r: Rect2 = room.rect
 		if room.has("hole") or room.has("block"):
 			var inner: Rect2 = room.hole if room.has("hole") else room.block
@@ -294,7 +360,7 @@ func _build_regions() -> void:
 			_add_region(Rect2(sx, r.position.y, r.end.x - sx, r.size.y), room.id, room.name + " (east)")
 		else:
 			_add_region(r, room.id, room.name)
-	for b in BRIDGES:
+	for b in bridges:
 		_add_region(b.rect, &"bridge", "Catwalk")
 
 	# Portals between every pair of touching regions.
@@ -305,7 +371,7 @@ func _build_regions() -> void:
 				continue
 			var room_i: StringName = regions[i].room
 			if room_i == regions[j].room:
-				for room in ROOMS:
+				for room in rooms:
 					if room.id == room_i and room.has("door"):
 						e = _clip_edge(e, room.door.x, room.door.y)
 			if e.is_empty():
@@ -382,7 +448,7 @@ func _clip_edge(e: Dictionary, lo: float, hi: float) -> Dictionary:
 ## Gaps in a room's outer railing where bridges attach.
 func _openings_for(r: Rect2) -> Array:
 	var out: Array = []
-	for b in BRIDGES:
+	for b in bridges:
 		var e := _shared_edge(r, b.rect)
 		if e.is_empty():
 			continue
@@ -396,7 +462,7 @@ func _openings_for(r: Rect2) -> Array:
 
 
 func _build_rooms() -> void:
-	for room in ROOMS:
+	for room in rooms:
 		var r: Rect2 = room.rect
 		match room.id:
 			&"lift":
@@ -427,31 +493,35 @@ func _build_rooms() -> void:
 
 
 func _build_bridges() -> void:
-	for i in BRIDGES.size():
-		var b: Dictionary = BRIDGES[i]
+	var lamp_c: Color = layout.get("lamp", deck_lamp_color) if generated else deck_lamp_color
+	for i in bridges.size():
+		var b: Dictionary = bridges[i]
 		var r: Rect2 = b.rect
 		# Travel direction = across the edges where the bridge meets a room.
 		var along_x := r.size.x > r.size.y
-		for room in ROOMS:
-			var e := _shared_edge(r, room.rect)
-			if not e.is_empty():
-				along_x = e.axis == &"x"
-				break
+		if b.has("along_x"):
+			along_x = b.along_x
+		else:
+			for room in rooms:
+				var e := _shared_edge(r, room.rect)
+				if not e.is_empty():
+					along_x = e.axis == &"x"
+					break
 		_kit.bridge(r, along_x, b.get("solid", false))
 		if along_x:
-			_kit.rail_run(Vector3(r.position.x, 0, r.position.y), Vector3(r.end.x, 0, r.position.y), Vector3.BACK, deck_lamp_color, i % 2 == 0)
-			_kit.rail_run(Vector3(r.position.x, 0, r.end.y), Vector3(r.end.x, 0, r.end.y), Vector3.FORWARD, deck_lamp_color, i % 2 == 1)
+			_kit.rail_run(Vector3(r.position.x, 0, r.position.y), Vector3(r.end.x, 0, r.position.y), Vector3.BACK, lamp_c, i % 2 == 0)
+			_kit.rail_run(Vector3(r.position.x, 0, r.end.y), Vector3(r.end.x, 0, r.end.y), Vector3.FORWARD, lamp_c, i % 2 == 1)
 		else:
-			_kit.rail_run(Vector3(r.position.x, 0, r.position.y), Vector3(r.position.x, 0, r.end.y), Vector3.RIGHT, deck_lamp_color, i % 2 == 0)
-			_kit.rail_run(Vector3(r.end.x, 0, r.position.y), Vector3(r.end.x, 0, r.end.y), Vector3.LEFT, deck_lamp_color, i % 2 == 1)
+			_kit.rail_run(Vector3(r.position.x, 0, r.position.y), Vector3(r.position.x, 0, r.end.y), Vector3.RIGHT, lamp_c, i % 2 == 0)
+			_kit.rail_run(Vector3(r.end.x, 0, r.position.y), Vector3(r.end.x, 0, r.end.y), Vector3.LEFT, lamp_c, i % 2 == 1)
 
 
-func _hole_rails(h: Rect2) -> void:
+func _hole_rails(h: Rect2, color := Color("ffae45")) -> void:
 	var red: Material = _kit.mats.rail_red
-	_kit.rail_run(Vector3(h.position.x, 0, h.position.y), Vector3(h.end.x, 0, h.position.y), Vector3.FORWARD, reactor_lamp_color, false, true, true, red)
-	_kit.rail_run(Vector3(h.position.x, 0, h.end.y), Vector3(h.end.x, 0, h.end.y), Vector3.BACK, reactor_lamp_color, false, true, true, red)
-	_kit.rail_run(Vector3(h.position.x, 0, h.position.y), Vector3(h.position.x, 0, h.end.y), Vector3.LEFT, reactor_lamp_color, false, true, true, red)
-	_kit.rail_run(Vector3(h.end.x, 0, h.position.y), Vector3(h.end.x, 0, h.end.y), Vector3.RIGHT, reactor_lamp_color, false, true, true, red)
+	_kit.rail_run(Vector3(h.position.x, 0, h.position.y), Vector3(h.end.x, 0, h.position.y), Vector3.FORWARD, color, false, true, true, red)
+	_kit.rail_run(Vector3(h.position.x, 0, h.end.y), Vector3(h.end.x, 0, h.end.y), Vector3.BACK, color, false, true, true, red)
+	_kit.rail_run(Vector3(h.position.x, 0, h.position.y), Vector3(h.position.x, 0, h.end.y), Vector3.LEFT, color, false, true, true, red)
+	_kit.rail_run(Vector3(h.end.x, 0, h.position.y), Vector3(h.end.x, 0, h.end.y), Vector3.RIGHT, color, false, true, true, red)
 
 
 ## Tag each void edge with the region its landing point is in.
@@ -529,6 +599,131 @@ func _dress_reactor(r: Rect2, hole: Rect2) -> void:
 	_kit.hazard_panel(Vector2(3.0, 3.0), Vector3(r.position.x + 4.0, 0, r.end.y - 4.0))
 	_kit.hazard_panel(Vector2(3.0, 3.0), Vector3(r.end.x - 4.0, 0, r.end.y - 4.0))
 	_kit.guide_line(Vector3(r.position.x + 1.0, 0, hole.position.y - 3.0), Vector3(r.end.x - 1.0, 0, hole.position.y - 3.0), 0.12, _kit.mats.guide_white)
+
+
+# --------------------------------------------------------------------------
+# Generated floors (ComplexGen layout)
+# --------------------------------------------------------------------------
+
+func _build_generated_rooms() -> void:
+	for room in rooms:
+		var r: Rect2 = room.rect
+		var lamp_c: Color = room.lamp
+		match room.kind:
+			"block":
+				_kit.deck(r)
+				_kit.rails_around(r, _openings_for(r), lamp_c)
+				_kit.machinery_block(room.block)
+				minimap_solids.append(room.block)
+			"hole":
+				var hole: Rect2 = room.hole
+				for strip in _ring_strips(r, hole):
+					_kit.deck(strip, null, false)
+				_kit.rails_around(r, _openings_for(r), lamp_c)
+				_hole_rails(hole, lamp_c)
+			"split":
+				_kit.deck(r)
+				_kit.rails_around(r, _openings_for(r), lamp_c)
+				var sx: float = room.split_x
+				var door: Vector2 = room.door
+				_kit.wall(Vector3(sx, 0, r.position.y), Vector3(sx, 0, door.x))
+				_kit.wall(Vector3(sx, 0, door.y), Vector3(sx, 0, r.end.y))
+				minimap_solids.append(Rect2(sx - 0.3, r.position.y, 0.6, door.x - r.position.y))
+				minimap_solids.append(Rect2(sx - 0.3, door.y, 0.6, r.end.y - door.y))
+			_:
+				_kit.deck(r)
+				_kit.rails_around(r, _openings_for(r), lamp_c)
+	for c in layout.crates:
+		_kit.crate(c.x, c.y, c.z, int(c.w))
+	for pnl in layout.panels:
+		_kit.hazard_panel(pnl.size, pnl.pos)
+	var white := true
+	for g in layout.guides:
+		_kit.guide_line(g[0], g[1], 0.14, _kit.mats.guide_white if white else null)
+		white = not white
+	for sg in layout.shaft_glows:
+		var c: Vector3 = sg.pos
+		var size: float = sg.size
+		if sg.reactor:
+			_kit.box(Vector3(4.0, 60.0, 4.0), c + Vector3(0, -34.0, 0), _kit.mats.machine_dark, false, 0.0, false)
+			for k in 4:
+				var ring := _kit.torus(2.4, 2.9, c + Vector3(0, -4.0 - k * 5.0, 0), _kit.mats.teal_strip if k % 2 == 0 else _kit.mats.amber_strip)
+				ring.scale = Vector3(1.0, 0.3, 1.0)
+			_kit.omni(c + Vector3(0, -6.0, 0), Color("4ff0e0"), 4.0, 16.0, 2.0)
+		else:
+			# Glowing bands down the shaft and a pipe (no light: keeps big floors cheap).
+			for k in 2:
+				var ring := _kit.torus(size * 0.3, size * 0.36, c + Vector3(0, -6.0 - k * 7.0, 0), _kit.mats.teal_strip if k == 0 else _kit.mats.amber_strip)
+				ring.scale = Vector3(1.0, 0.3, 1.0)
+			_kit.box(Vector3(0.6, 40.0, 0.6), c + Vector3(size * 0.3, -22.0, 0), _kit.mats.machine_dark, false, 0.0, false)
+
+
+func _build_generated_gameplay() -> void:
+	# The lift you arrived on (your way out on the bottom floor).
+	lift = ExtractionLift.new()
+	_add_obj(lift, lift_position)
+
+	if is_final_floor:
+		uplink = Interactable.new()
+		uplink.style = &"terminal"
+		uplink.prompt = "Start uplink"
+		uplink.disabled_prompt = ""
+		uplink.ready_color = Color("19f4ff")
+		uplink.radius = 2.6
+		var yaw := 0.0
+		for room in rooms:
+			var rr: Rect2 = room.rect
+			if rr.has_point(Vector2(uplink_position.x, uplink_position.z)):
+				var to := Vector2(rr.get_center().x - uplink_position.x, rr.get_center().y - uplink_position.z)
+				if to.length() > 0.1:
+					yaw = atan2(-to.x, -to.y) + PI
+		_add_obj(uplink, uplink_position, yaw, 1.4)
+	else:
+		# Cargo lift down: a pad and a console that needs the breakers on.
+		var pad := ExtractionLift.new()
+		_add_obj(pad, cargo_position)
+		cargo = Interactable.new()
+		cargo.style = &"terminal"
+		cargo.prompt = "Ride the cargo lift down"
+		cargo.disabled_prompt = "No power: throw the breakers"
+		cargo.ready_color = Color("ffae45")
+		cargo.radius = 2.8
+		_add_obj(cargo, cargo_position + Vector3(0, 0, -1.2), 0.0, 1.2)
+		for b in layout.breakers:
+			var sw := Interactable.new()
+			sw.prompt = "Throw breaker"
+			sw.disabled_prompt = ""
+			sw.ready_color = Color("ffd23d")
+			sw.busy_color = Color("3dff9a")
+			sw.radius = 2.4
+			_add_obj(sw, b.pos, 0.0, 0.5)
+			breakers.append(sw)
+
+	for p in layout.barrels:
+		_add_obj(ExplosiveBarrel.new(), p, 0.0, 0.7)
+	for p in layout.nests:
+		var nest := HiveNest.new()
+		_add_obj(nest, p, 0.0, 1.6)
+		nests.append(nest)
+	for l in layout.lasers:
+		var grid_switch := Interactable.new()
+		grid_switch.prompt = "Arm laser grid"
+		_add_obj(grid_switch, l.switch, l.switch_rot, 0.5)
+		var grid := LaserGrid.new()
+		grid.switch = grid_switch
+		grid.span = l.span
+		_add_obj(grid, l.pos, l.rot)
+	for d in layout.doors:
+		var door_switch := Interactable.new()
+		door_switch.prompt = "Seal blast door"
+		_add_obj(door_switch, d.switch, d.switch_rot, 0.5)
+		var door := BlastDoor.new()
+		door.switch = door_switch
+		door.width = d.width
+		_add_obj(door, d.pos)
+	turret_spots.assign(layout.turrets)
+	for t in turret_spots:
+		_blockers.append(Vector3(t.pos.x, t.pos.z, 1.0))
 
 
 # --------------------------------------------------------------------------

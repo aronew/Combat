@@ -180,6 +180,10 @@ func omni(pos: Vector3, color: Color, energy: float, range_m: float, fog_energy 
 	light.omni_attenuation = 1.3
 	light.light_volumetric_fog_energy = fog_energy
 	light.position = pos
+	# Lamps far from the camera fade out (big generated floors have hundreds).
+	light.distance_fade_enabled = true
+	light.distance_fade_begin = 48.0
+	light.distance_fade_length = 10.0
 	root.add_child(light)
 	return light
 

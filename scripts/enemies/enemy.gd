@@ -276,6 +276,16 @@ func is_active() -> bool:
 	return state != State.INACTIVE
 
 
+## Can the blade's target assist pick (and dash-strike to) this bug?
+func is_targetable() -> bool:
+	return state == State.CHASE or state == State.DORMANT or state == State.PATROL or state == State.INVESTIGATE
+
+
+## True while winding up a bite: a blade cut now is a counter.
+func is_counterable() -> bool:
+	return _bite_t >= 0.0
+
+
 func is_unaware() -> bool:
 	return state == State.DORMANT or state == State.PATROL or state == State.INVESTIGATE
 
@@ -573,7 +583,7 @@ func _update_stuck(intended: Vector3, move_speed: float, delta: float) -> void:
 # ==========================================================================
 
 ## Returns the damage actually dealt (0 if blocked or already dead).
-## kind: &"bullet", &"slash", &"silent", &"explosion", &"laser", &"beam", &"crush", &"reflect", &"self".
+## kind: &"bullet", &"slash", &"counter", &"silent", &"explosion", &"laser", &"beam", &"crush", &"reflect", &"self".
 func take_hit(damage: float, direction: Vector3, knockback: float, _source_team: int = 0, kind: StringName = &"bullet") -> float:
 	if state == State.INACTIVE:
 		return 0.0
@@ -596,7 +606,7 @@ func take_hit(damage: float, direction: Vector3, knockback: float, _source_team:
 	push = push.normalized() if push.length_squared() > 0.0001 else Vector3.ZERO
 	_knock += push * knockback * (1.0 - knockback_resistance)
 	_move_vel *= hit_stagger
-	if _bite_t >= 0.0 and kind in [&"slash", &"slash_crit"]:
+	if _bite_t >= 0.0 and kind in [&"slash", &"slash_crit", &"counter"]:
 		_end_bite()  # blade hits interrupt a bite
 	var killed := health <= 0.0
 	if Game.fx and kind != &"silent":
