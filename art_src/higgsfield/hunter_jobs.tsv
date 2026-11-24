@@ -1,0 +1,18 @@
+# Higgsfield (Meshy) jobs behind assets/models/hunter. Re-download a result from the Higgsfield
+# library by job id; save as SRC_DIR/<file> and run art_src/blender/import_hunter.py SRC_DIR.
+# file	job id	model	settings / library clip
+hunter.glb	98911b82-9a87-43de-954b-fc63ed8c4fb8	multi_image_to_3d	4-view turnaround, textured + PBR, 30k tris, auto-rig A-pose 1.75 m
+rifle.glb	95207a47-e119-45d1-ade0-ef58b1e5c52f	image_to_3d	side view, textured + PBR, 12k tris
+sword.glb	993dcefd-01c2-442d-b7de-dbe429fb5419	image_to_3d	side view, textured + PBR, 12k tris
+clips/run_forward.glb	de69aa3a-5802-46f8-8a71-d40a6acf957e	3d_rigging	animation 654 (Rifle_Charge_inplace)
+clips/idle.glb	4da225fb-c1d9-4799-9682-8431eed649c0	3d_rigging	animation 89 (Combat_Stance)
+clips/run_back_left.glb	eb1d0408-86c0-4ecd-ae45-a53d0cca9a9b	3d_rigging	animation 606 (BackLeft_run_inplace)
+clips/run_back_right.glb	fa2be67b-d9cc-4f66-8dc5-4a70170974cd	3d_rigging	animation 607 (BackRight_Run_inplace)
+clips/strafe_left.glb	74d8cf82-8029-4dc8-bafd-1d49b33a7705	3d_rigging	animation 694 (Walk_Left_with_Gun_inplace)
+clips/walk_back.glb	d20ef451-3e19-4ec9-a647-a793e1e4f892	3d_rigging	animation 686 (Walk_Backward_with_Gun_1_inplace)
+clips/roll.glb	95ef617f-88a7-4234-bbe2-726990b3cc83	3d_rigging	animation 158 (Roll_Dodge)
+clips/sword_combo.glb	457c728c-3b8a-43d3-b9d1-4fa8d7828e02	3d_rigging	animation 105 (Triple_Combo_Attack)
+clips/sword_parry.glb	46efee7a-253a-4f43-868e-922a2e7fa218	3d_rigging	animation 147 (Sword_Parry)
+clips/reload.glb	ead9de2a-a015-4909-87d1-cb4e5f169381	3d_rigging	animation 170 (Standing_Reload)
+clips/hit.glb	efb7311b-92bb-4467-abdd-9177040fc786	3d_rigging	animation 178 (Hit_Reaction)
+clips/death.glb	0b8c8758-e94a-4ebd-993b-69caa688cd02	3d_rigging	animation 183 (Shot_and_Fall_Backward)
