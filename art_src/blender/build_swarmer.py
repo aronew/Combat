@@ -12,14 +12,9 @@ import math
 import os
 import sys
 
-import bpy
-from mathutils import Vector
-
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import kit  # noqa: E402
-
-REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-OUT = os.path.join(REPO, "assets", "models", "enemies", "swarmer.glb")
+from hexapod import Hexapod  # noqa: E402
 
 GLOW = (1.0, 0.36, 0.03)  # amber, matches the concept sheet
 FPS = 30
@@ -37,8 +32,7 @@ LEGS = {
     "mid": (0.00, 0.00, 0.02, 0.34),
     "back": (-0.13, -0.10, -0.27, 0.40),
 }
-HIP_X, KNEE_X, FOOT_X = 0.15, 0.35, 0.47
-HIP_Z, KNEE_Z = 0.24, 0.41
+HEX = Hexapod(LEGS, hip_x=0.15, knee_x=0.35, foot_x=0.47, hip_z=0.24, knee_z=0.41)
 
 
 def top_z(x, y):
@@ -49,18 +43,6 @@ def top_z(x, y):
         if d < 1.0:
             best = max(best, cz + rz * math.sqrt(1.0 - d))
     return best
-
-
-def leg_points(name, side):
-    hy, kdy, fdy, _ = LEGS[name]
-    hip = Vector((side * HIP_X, hy, HIP_Z))
-    knee = Vector((side * KNEE_X, hy + kdy, KNEE_Z))
-    foot = Vector((side * FOOT_X, hy + fdy, 0.0))
-    return hip, knee, foot
-
-
-def bone_name(leg, side, seg):
-    return f"leg_{leg}_{'L' if side < 0 else 'R'}_{seg}"
 
 
 # ---------------------------------------------------------------------------
@@ -122,21 +104,7 @@ def build_parts():
             P.append(kit.ellipsoid(f"seam_{y}_{s}", "body" if y > -0.1 else "abdomen", G,
                                    (s * 0.085, y, top_z(s * 0.085, y) + 0.005), (r, r * 1.35, 0.03), 8, 4))
 
-    # legs: thick femur + sickle tibia + knee spike
-    for leg in LEGS:
-        for s in (-1, 1):
-            hip, knee, foot = leg_points(leg, s)
-            hip_in = hip + Vector((-s * 0.06, 0, 0))
-            mid = hip.lerp(knee, 0.5) + Vector((0, 0, 0.025))
-            P.append(kit.tube(f"femur_{leg}_{s}", bone_name(leg, s, "up"), C,
-                              [hip_in, mid, knee], [0.05, 0.045, 0.038], sides=6, tip=False))
-            out = Vector((s, 0, 0))
-            P.append(kit.blade(f"tibia_{leg}_{s}", bone_name(leg, s, "lo"), C, knee,
-                               foot - knee, out, length=(foot - knee).length * 1.03,
-                               width=0.045, thickness=0.04, curl=0.14, sections=6, base_round=0.9))
-            P.append(kit.blade(f"knee_spike_{leg}_{s}", bone_name(leg, s, "up"), C,
-                               knee + Vector((0, 0, 0.015)), (s * 0.45, -0.55, 0.7), (0, 0, 1),
-                               length=0.08, width=0.025, thickness=0.02, curl=0.2))
+    P += HEX.parts()
     return P
 
 
@@ -152,11 +120,7 @@ def build_rig():
         ("mand_L", (-0.05, 0.34, 0.17), (-0.08, 0.47, 0.14), "head"),
         ("mand_R", (0.05, 0.34, 0.17), (0.08, 0.47, 0.14), "head"),
     ]
-    for leg in LEGS:
-        for s in (-1, 1):
-            hip, knee, foot = leg_points(leg, s)
-            bones.append((bone_name(leg, s, "up"), hip, knee, "body"))
-            bones.append((bone_name(leg, s, "lo"), knee, foot, bone_name(leg, s, "up")))
+    bones += HEX.bones()
     return kit.build_armature("SwarmerRig", bones)
 
 
@@ -167,41 +131,13 @@ def build_rig():
 X, Y, Z = (1, 0, 0), (0, 1, 0), (0, 0, 1)
 
 
-def leg_pose(rig, R, leg, s, yaw, lift, knee):
-    """yaw > 0 swings the foot forward; lift > 0 raises the leg; knee > 0 tucks the foot."""
-    hip, kn, foot = leg_points(leg, s)
-    d = Vector((s, 0, 0))
-    lift_axis = d.cross(Vector(Z))
-    up = bone_name(leg, s, "up")
-    lo = bone_name(leg, s, "lo")
-    R[up] = kit.local_rotation(rig, up, Z, s * yaw) @ kit.local_rotation(rig, up, lift_axis, lift)
-    R[lo] = kit.local_rotation(rig, lo, lift_axis, -knee)
-
-
-TRIPOD = {("front", -1): 0.0, ("mid", 1): 0.0, ("back", -1): 0.0,
-          ("front", 1): 0.5, ("mid", -1): 0.5, ("back", 1): 0.5}
-
-
 def anim_walk(rig, frames=16):
     kit.new_action(rig, "walk")
     for f in range(frames + 1):
         t = f / frames
         R, O = {}, {}
-        for (leg, s), ph in TRIPOD.items():
-            amp = LEGS[leg][3]
-            u = (t + ph) % 1.0
-            if u < 0.5:  # stance: foot planted, sweeps backward
-                yaw = amp * (1.0 - 4.0 * u)
-                lift = 0.0
-                kn = 0.0
-            else:  # swing: lift and reach forward
-                w = (u - 0.5) * 2.0
-                yaw = -amp * math.cos(w * math.pi)
-                lift = 0.42 * math.sin(w * math.pi)
-                kn = 0.3 * math.sin(w * math.pi)
-            leg_pose(rig, R, leg, s, yaw, lift, kn)
-        roll = 0.05 * math.sin(t * 2 * math.pi)
-        R["body"] = kit.local_rotation(rig, "body", Y, roll)
+        HEX.walk(rig, R, t)
+        R["body"] = kit.local_rotation(rig, "body", Y, 0.05 * math.sin(t * 2 * math.pi))
         O["body"] = kit.local_offset(rig, "body", (0, 0, 0.014 * abs(math.sin(t * 2 * math.pi))))
         R["abdomen"] = kit.local_rotation(rig, "abdomen", Z, 0.06 * math.sin(t * 2 * math.pi + 1.2))
         R["head"] = kit.local_rotation(rig, "head", Z, -0.04 * math.sin(t * 2 * math.pi))
@@ -211,11 +147,9 @@ def anim_walk(rig, frames=16):
 def anim_idle(rig, frames=48):
     kit.new_action(rig, "idle")
     for f in range(0, frames + 1, 3):
-        t = f / frames
-        w = t * 2 * math.pi
+        w = f / frames * 2 * math.pi
         R, O = {}, {}
-        for i, ((leg, s), _) in enumerate(TRIPOD.items()):
-            leg_pose(rig, R, leg, s, 0.035 * math.sin(w + i * 1.3), 0.03 * max(0.0, math.sin(w * 2 + i)), 0.0)
+        HEX.fidget(rig, R, w)
         O["body"] = kit.local_offset(rig, "body", (0, 0, -0.008 + 0.008 * math.sin(w)))
         R["abdomen"] = kit.local_rotation(rig, "abdomen", X, 0.05 * math.sin(w))
         R["head"] = kit.local_rotation(rig, "head", Z, 0.12 * math.sin(w + 0.6)) @ \
@@ -241,107 +175,31 @@ def anim_attack(rig):
         R["mand_L"] = kit.local_rotation(rig, "mand_L", Z, mand)
         R["mand_R"] = kit.local_rotation(rig, "mand_R", Z, -mand)
         for s in (-1, 1):
-            leg_pose(rig, R, "front", s, 0.25 * flift, flift, 0.4 * flift)
-            leg_pose(rig, R, "mid", s, 0.0, -0.08 * pitch, 0.0)
-            leg_pose(rig, R, "back", s, -0.05 * flift, -0.1 * pitch, 0.0)
+            HEX.pose(rig, R, "front", s, 0.25 * flift, flift, 0.4 * flift)
+            HEX.pose(rig, R, "mid", s, 0.0, -0.08 * pitch, 0.0)
+            HEX.pose(rig, R, "back", s, -0.05 * flift, -0.1 * pitch, 0.0)
         kit.key_pose(rig, f, R, O)
 
 
 # ---------------------------------------------------------------------------
-# Preview render (Cycles, CPU) for review outside the engine
-# ---------------------------------------------------------------------------
 
-def render_preview(rig, out_dir):
-    os.makedirs(out_dir, exist_ok=True)
-    scn = bpy.context.scene
-    scn.render.engine = "CYCLES"
-    scn.cycles.device = "CPU"
-    scn.cycles.samples = 48
-    scn.render.resolution_x, scn.render.resolution_y = 900, 600
-    world = bpy.data.worlds.new("W")
-    world.use_nodes = True
-    world.node_tree.nodes["Background"].inputs[0].default_value = (0.09, 0.09, 0.095, 1)
-    scn.world = world
-
-    bpy.ops.mesh.primitive_plane_add(size=8)
-    floor = bpy.context.object
-    fm = bpy.data.materials.new("Floor")
-    fm.use_nodes = True
-    fm.node_tree.nodes["Principled BSDF"].inputs["Base Color"].default_value = (0.11, 0.11, 0.115, 1)
-    floor.data.materials.append(fm)
-
-    def light(kind, loc, energy, color=(1, 1, 1), rot=None, size=1.0):
-        ld = bpy.data.lights.new(kind + str(loc), kind)
-        ld.energy = energy
-        ld.color = color
-        if kind == "AREA":
-            ld.size = size
-        o = bpy.data.objects.new(ld.name, ld)
-        o.location = loc
-        if rot:
-            o.rotation_euler = rot
-        scn.collection.objects.link(o)
-        return o
-
-    light("SUN", (0, 0, 5), 2.5, rot=(math.radians(35), 0, math.radians(30)))
-    light("AREA", (-1.2, -1.5, 1.4), 120, (0.4, 0.8, 1.0), size=1.2)
-    light("AREA", (1.5, 1.0, 1.2), 60, (1.0, 0.7, 0.45), size=1.0)
-
-    cam_d = bpy.data.cameras.new("Cam")
-    cam = bpy.data.objects.new("Cam", cam_d)
-    scn.collection.objects.link(cam)
-    scn.camera = cam
-
-    def shoot(name, loc, target=(0, 0, 0.25), lens=50, frame=None, action=None):
-        rig.animation_data.action = bpy.data.actions[action] if action else None
-        for pb in rig.pose.bones:
-            pb.rotation_quaternion = (1, 0, 0, 0)
-            pb.location = (0, 0, 0)
-        if frame is not None:
-            scn.frame_set(frame)
-        cam.location = loc
-        d = Vector(target) - Vector(loc)
-        cam.rotation_euler = d.to_track_quat("-Z", "Y").to_euler()
-        cam_d.lens = lens
-        scn.render.filepath = os.path.join(out_dir, name + ".png")
-        bpy.ops.render.render(write_still=True)
-        print("preview:", scn.render.filepath)
-
-    shoot("swarmer_3q", (1.7, 2.1, 1.25))
-    shoot("swarmer_front", (0, 2.6, 0.55))
-    shoot("swarmer_top", (0, -1.2, 3.2), lens=50)
-    shoot("swarmer_walk", (1.9, 1.6, 1.1), action="walk", frame=4)
-    shoot("swarmer_attack", (2.1, 0.4, 0.9), action="attack", frame=4)
+SHOTS = [
+    ("3q", (1.7, 2.1, 1.25), (0, 0, 0.25), None, 0),
+    ("front", (0, 2.6, 0.55), (0, 0, 0.25), None, 0),
+    ("top", (0, -1.2, 3.2), (0, 0, 0.25), None, 0),
+    ("walk", (1.9, 1.6, 1.1), (0, 0, 0.25), "walk", 4),
+    ("attack", (2.1, 0.4, 0.9), (0, 0, 0.25), "attack", 4),
+]
 
 
-# ---------------------------------------------------------------------------
-
-def main():
-    argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else sys.argv[1:]
-    preview = argv[argv.index("--preview") + 1] if "--preview" in argv else None
-
-    kit.reset_scene()
-    bpy.context.scene.render.fps = FPS
-    mats = kit.make_materials(GLOW)
+def build(mats):
     rig = build_rig()
     mesh = kit.build_mesh_object("Swarmer", build_parts(), mats)
     kit.skin(mesh, rig)
-    print("swarmer tris:", sum(len(p.vertices) - 2 for p in mesh.data.polygons))
-
     anim_idle(rig)
     anim_walk(rig)
     anim_attack(rig)
-    rig.animation_data.action = None
-    for pb in rig.pose.bones:
-        pb.rotation_quaternion = (1, 0, 0, 0)
-        pb.location = (0, 0, 0)
-
-    os.makedirs(os.path.dirname(OUT), exist_ok=True)
-    kit.export_glb(OUT)
-    print("exported:", OUT)
-
-    if preview:
-        render_preview(rig, preview)
+    return rig, mesh, SHOTS
 
 
-main()
+kit.run("swarmer", GLOW, build)

@@ -1,8 +1,8 @@
 # Combat (greybox prototype)
 
 Top-down arcade twin-stick action RPG against alien bug swarms. Godot 4.7, GDScript, Forward+.
-Everything is built from primitives except the Swarmer, which is a rigged Blender model
-(see `art_src/README.md`). The look follows the concept art in `reference/`.
+Everything is built from primitives except the Swarmer and Burster, which are rigged Blender
+models (see `art_src/README.md`). The look follows the concept art in `reference/`.
 
 ## The dive: "First Dive"
 

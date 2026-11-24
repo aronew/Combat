@@ -15,9 +15,11 @@ Conventions (match the Godot side):
 """
 
 import math
+import os
+import sys
 
-import bmesh
-import bpy
+import bpy  # must come before bmesh when running as the bpy module
+import bmesh  # noqa: E402
 from mathutils import Matrix, Quaternion, Vector
 
 SHARP_ANGLE = math.radians(38.0)
@@ -33,14 +35,12 @@ def reset_scene():
 
 def make_materials(glow_rgb):
     chitin = bpy.data.materials.new("Chitin")
-    chitin.use_nodes = True
     b = chitin.node_tree.nodes["Principled BSDF"]
     b.inputs["Base Color"].default_value = (0.105, 0.075, 0.062, 1.0)
     b.inputs["Metallic"].default_value = 0.3
     b.inputs["Roughness"].default_value = 0.38
 
     glow = bpy.data.materials.new("Glow")
-    glow.use_nodes = True
     g = glow.node_tree.nodes["Principled BSDF"]
     g.inputs["Base Color"].default_value = (*glow_rgb, 1.0)
     g.inputs["Emission Color"].default_value = (*glow_rgb, 1.0)
@@ -268,15 +268,29 @@ def new_action(rig, name):
     return act
 
 
-def key_pose(rig, frame, rotations, offsets=None):
-    """rotations: {bone: Quaternion}; offsets: {bone: Vector (local)}.
-    Bones not listed are keyed at rest so every clip drives every bone."""
+def key_pose(rig, frame, rotations, offsets=None, scales=None):
+    """rotations: {bone: Quaternion}; offsets: {bone: Vector (local)};
+    scales: {bone: float or (x, y, z)}. Bones not listed are keyed at rest so
+    every clip drives every bone (no pose leaks between clips)."""
     offsets = offsets or {}
+    scales = scales or {}
     for pb in rig.pose.bones:
         pb.rotation_quaternion = rotations.get(pb.name, Quaternion())
         pb.location = offsets.get(pb.name, Vector())
+        sc = scales.get(pb.name, 1.0)
+        pb.scale = (sc, sc, sc) if isinstance(sc, (int, float)) else sc
         pb.keyframe_insert("rotation_quaternion", frame=frame)
         pb.keyframe_insert("location", frame=frame)
+        if pb.name in scales:
+            pb.keyframe_insert("scale", frame=frame)
+
+
+def reset_pose(rig):
+    rig.animation_data.action = None
+    for pb in rig.pose.bones:
+        pb.rotation_quaternion = (1, 0, 0, 0)
+        pb.location = (0, 0, 0)
+        pb.scale = (1, 1, 1)
 
 
 def export_glb(path):
@@ -293,3 +307,84 @@ def export_glb(path):
         export_cameras=False,
         export_lights=False,
     )
+
+
+# ---------------------------------------------------------------------------
+# Build entry point + preview render
+# ---------------------------------------------------------------------------
+
+REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+
+
+def run(name, glow_rgb, build, fps=30):
+    """Common main: reset, build(materials) -> (rig, mesh), export, optional preview.
+
+    Writes assets/models/enemies/<name>.glb. Pass `--preview DIR` to also render
+    stills with Cycles on the CPU."""
+    argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else sys.argv[1:]
+    preview = argv[argv.index("--preview") + 1] if "--preview" in argv else None
+
+    reset_scene()
+    bpy.context.scene.render.fps = fps
+    rig, mesh, shots = build(make_materials(glow_rgb))
+    print(f"{name} tris:", sum(len(p.vertices) - 2 for p in mesh.data.polygons))
+    reset_pose(rig)
+
+    out = os.path.join(REPO, "assets", "models", "enemies", name + ".glb")
+    os.makedirs(os.path.dirname(out), exist_ok=True)
+    export_glb(out)
+    print("exported:", out)
+    if preview:
+        render_preview(rig, preview, name, shots)
+
+
+def render_preview(rig, out_dir, prefix, shots):
+    """shots: list of (suffix, camera location, look-at target, action or None, frame)."""
+    os.makedirs(out_dir, exist_ok=True)
+    scn = bpy.context.scene
+    scn.render.engine = "CYCLES"
+    scn.cycles.device = "CPU"
+    scn.cycles.samples = 48
+    scn.render.resolution_x, scn.render.resolution_y = 900, 600
+    world = bpy.data.worlds.new("W")
+    world.node_tree.nodes["Background"].inputs[0].default_value = (0.09, 0.09, 0.095, 1)
+    scn.world = world
+
+    bpy.ops.mesh.primitive_plane_add(size=8)
+    floor = bpy.context.object
+    fm = bpy.data.materials.new("Floor")
+    fm.node_tree.nodes["Principled BSDF"].inputs["Base Color"].default_value = (0.11, 0.11, 0.115, 1)
+    floor.data.materials.append(fm)
+
+    def light(kind, loc, energy, color=(1, 1, 1), rot=None, size=1.0):
+        ld = bpy.data.lights.new(kind + str(loc), kind)
+        ld.energy = energy
+        ld.color = color
+        if kind == "AREA":
+            ld.size = size
+        o = bpy.data.objects.new(ld.name, ld)
+        o.location = loc
+        if rot:
+            o.rotation_euler = rot
+        scn.collection.objects.link(o)
+
+    light("SUN", (0, 0, 5), 2.5, rot=(math.radians(35), 0, math.radians(30)))
+    light("AREA", (-1.2, -1.5, 1.4), 120, (0.4, 0.8, 1.0), size=1.2)
+    light("AREA", (1.5, 1.0, 1.2), 60, (1.0, 0.7, 0.45), size=1.0)
+
+    cam_d = bpy.data.cameras.new("Cam")
+    cam_d.lens = 50
+    cam = bpy.data.objects.new("Cam", cam_d)
+    scn.collection.objects.link(cam)
+    scn.camera = cam
+
+    for suffix, loc, target, action, frame in shots:
+        reset_pose(rig)
+        if action:
+            rig.animation_data.action = bpy.data.actions[action]
+            scn.frame_set(frame)
+        cam.location = loc
+        cam.rotation_euler = (Vector(target) - Vector(loc)).to_track_quat("-Z", "Y").to_euler()
+        scn.render.filepath = os.path.join(out_dir, f"{prefix}_{suffix}.png")
+        bpy.ops.render.render(write_still=True)
+        print("preview:", scn.render.filepath)

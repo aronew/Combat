@@ -27,7 +27,7 @@ Then open the project in Godot (or run `godot --headless --path . --import`) to 
 - Two material slots: `Chitin` and `Glow`. The `.glb.import` file remaps them to
   `assets/materials/*.tres`, so colours are tuned in Godot, not Blender.
 - Rigid skinning: each part is weighted 100% to one bone.
-- Clips: `idle` and `walk` loop (set in the `.glb.import`), `attack` is a one-shot.
+- Clips: `idle` and `walk` loop (set in the `.glb.import`); anything else is a one-shot.
   `walk` is one stride cycle; `enemy.gd` scales its speed by ground speed
   (`walk_anim_speed`, `max_anim_speed` on the enemy scene).
 
@@ -35,8 +35,10 @@ Then open the project in Godot (or run `godot --headless --path . --import`) to 
 
 | File | What |
 |---|---|
-| `blender/kit.py` | Shared parts kit: limb tubes, chitin blades (plates, spikes, claws, mandibles), ellipsoids, orbs; rig, skinning, keyframe and export helpers |
-| `blender/build_swarmer.py` | Swarmer: 6 legs, shingled shell, amber eyes and glow seams. ~2.5k tris, 17 bones |
+| `blender/kit.py` | Shared parts kit: limb tubes, chitin blades (plates, spikes, claws, mandibles), ellipsoids, orbs; rig, skinning, keyframe, export and preview-render helpers |
+| `blender/hexapod.py` | Shared six-legged walker: leg layout, leg meshes and bones, tripod walk gait, idle fidget |
+| `blender/build_swarmer.py` | Swarmer: shingled shell, amber eyes and glow seams. ~2.5k tris, 17 bones. Clips: idle, walk, attack |
+| `blender/build_burster.py` | Burster: lime sac with chitin veins under an armoured front shell. ~2.8k tris, 17 bones. Clips: idle (sac throbs), walk, swell (played when its fuse starts) |
 
 ## Hooking a model into an enemy
 
