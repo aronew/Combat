@@ -136,6 +136,7 @@ var _route: Array[Vector3] = []
 var _route_i := 0
 var _idle_t := 0.0
 var _mound: Node3D
+var _idle_snd: AudioStreamPlayer3D
 static var _mound_mat: StandardMaterial3D
 static var _mound_glow: StandardMaterial3D
 var _anim: AnimationPlayer
@@ -188,6 +189,7 @@ func spawn_at(pos: Vector3, mode: StringName, opts := {}) -> void:
 	_route_i = 0
 	_idle_t = randf_range(0.5, 3.0)
 	_set_mound(false)
+	_set_idle_sound(&"")
 	match mode:
 		&"dormant":
 			state = State.DORMANT
@@ -199,8 +201,10 @@ func spawn_at(pos: Vector3, mode: StringName, opts := {}) -> void:
 					_patrol_to = p
 				&"burrow":
 					_set_mound(true)
+					_set_idle_sound(&"burrow_mound")
 				&"feed":
 					_face_dir(_food - p, 1.0)
+					_set_idle_sound(&"bug_feeding")
 		&"patrol":
 			state = State.PATROL
 			global_position = p
@@ -212,6 +216,7 @@ func spawn_at(pos: Vector3, mode: StringName, opts := {}) -> void:
 			global_position = p
 			visual.scale = Vector3.ONE * 0.1
 			visual.position.y = -0.4
+			Audio.play_at(&"burrow_emerge", p)
 		&"drop":
 			state = State.DROP
 			_to = p
@@ -222,6 +227,7 @@ func spawn_at(pos: Vector3, mode: StringName, opts := {}) -> void:
 			_to = p
 			global_position = _from
 			_face_dir(_to - _from, 1.0)
+			Audio.play_at(&"bug_leap", p, 0.0, 1.1 / _tier_scale)
 		_:
 			state = State.CHASE
 			global_position = p
@@ -264,6 +270,7 @@ func _activate(health_mult: float, speed_mult: float) -> void:
 
 func deactivate() -> void:
 	state = State.INACTIVE
+	_set_idle_sound(&"")
 	visible = false
 	process_mode = Node.PROCESS_MODE_DISABLED
 	global_position = Vector3(0.0, -500.0, 0.0)
@@ -390,10 +397,14 @@ func alert(scream := true) -> void:
 		visual.position.y = -0.4
 		if Game.fx:
 			Game.fx.burst(global_position + Vector3.UP * 0.2, Vector3.UP, 0.7)
+		Audio.play_at(&"burrow_emerge", global_position)
 	else:
 		state = State.CHASE
 	idle = &"sleep"
+	_set_idle_sound(&"")
 	if was_unaware:
+		if scream:
+			Audio.play_at(_alert_sound(), global_position, 0.0, 1.0 / sqrt(_tier_scale))
 		_on_alerted()
 		if scream and Game.director:
 			Game.director.on_enemy_spotted(self)
@@ -722,6 +733,8 @@ func _die(direction: Vector3, kind: StringName) -> void:
 # ==========================================================================
 
 func _tick_idle(delta: float) -> void:
+	if idle != &"burrow" and randf() < delta * 0.05:
+		Audio.play_at(&"bug_chitter", global_position, 0.0, 1.15 / _tier_scale)
 	match idle:
 		&"feed":
 			# Heads down over the carcass, pecking; now and then shuffle round it.
@@ -917,6 +930,20 @@ func _on_spawned() -> void:
 	pass
 
 
+## Cry when this bug notices you.
+func _alert_sound() -> StringName:
+	return &"bug_alert"
+
+
+## Looping idle sound (feeding, burrow mound); empty name stops it.
+func _set_idle_sound(sound: StringName) -> void:
+	if _idle_snd:
+		_idle_snd.queue_free()
+		_idle_snd = null
+	if sound != &"":
+		_idle_snd = Audio.attach_loop(self, sound)
+
+
 func _on_alerted() -> void:
 	pass
 
@@ -942,6 +969,7 @@ func _attack_tick(player: Player, delta: float) -> void:
 			return
 		_end_bite()
 		var dir := Vector3(d.x, 0.0, d.y).normalized()
+		Audio.play_at(&"bite", global_position, 0.0, 1.0 / sqrt(_tier_scale))
 		if d.length() < reach * bite_reach_mult and player.take_damage(contact_damage * damage_mult, global_position):
 			_knock = -dir * 10.0
 			_move_vel = Vector3.ZERO
@@ -951,6 +979,7 @@ func _attack_tick(player: Player, delta: float) -> void:
 	_bite_cd -= delta
 	if _bite_cd <= 0.0 and d.length() < reach * 1.1:
 		_bite_t = bite_windup
+		Audio.play_at(&"bite_windup", global_position, 0.0, 1.0 / sqrt(_tier_scale))
 		# time the clip so its snap lands when the bite resolves
 		play_anim_oneshot(&"attack", attack_anim_hit_time / maxf(bite_windup, 0.05))
 

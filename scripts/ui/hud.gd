@@ -222,6 +222,8 @@ func _on_phase(phase: int) -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("map") and _full_map:
 		_full_map.visible = not _full_map.visible and not Game.is_game_over
+		if _full_map.visible:
+			Audio.play(&"map_open")
 		get_viewport().set_input_as_handled()
 
 
