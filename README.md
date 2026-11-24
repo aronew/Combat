@@ -111,6 +111,20 @@ nests (destroy them to cut off spawns).
 | After the dive: back to the Rig / dive again | E / R | X / Back |
 | Close a Rig panel | Esc or E | |
 | Fullscreen | F11 | |
+| Graphics quality HIGH / MEDIUM / LOW (saved) | V | |
+
+### Low-end machines (Chromebooks, integrated GPUs)
+Press **V** until the corner reads **LOW**. That turns off volumetric fog, SSAO, glow, shadows
+and the point lights, swaps in a cheaper floor shader, renders at 67% resolution and caps how
+many bugs can be alive at once. The corner readout shows your FPS.
+
+If it's still slow, run the lighter **Compatibility** (OpenGL) renderer, which defaults to LOW:
+in the Godot editor, *Project → Project Settings → Rendering → Renderer → Rendering Method* =
+`gl_compatibility` (then restart the editor), or from a terminal:
+
+```bash
+godot --path . --rendering-method gl_compatibility
+```
 
 ## Layout
 

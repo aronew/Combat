@@ -20,6 +20,7 @@ config/icon="res://icon.svg"
 
 Game="*res://scripts/game.gd"
 Profile="*res://scripts/profile.gd"
+Graphics="*res://scripts/graphics.gd"
 
 [display]
 
@@ -61,6 +62,10 @@ swap_weapon={
 interact={
 "deadzone": 0.2,
 "events": [Object(InputEventKey,"device":-1,"physical_keycode":69,"unicode":101), Object(InputEventJoypadButton,"device":-1,"button_index":2,"pressed":true)]
+}
+graphics_quality={
+"deadzone": 0.2,
+"events": [Object(InputEventKey,"device":-1,"physical_keycode":86,"unicode":118)]
 }
 restart={
 "deadzone": 0.2,
