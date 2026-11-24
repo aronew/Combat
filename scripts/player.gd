@@ -1,10 +1,14 @@
 class_name Player
 extends CharacterBody3D
 ## Twin-stick mercenary: WASD (or left stick) to move, mouse (or right stick) to
-## aim, hold LMB / right trigger to fire, Space / A / RB to dash.
+## aim, LMB / right trigger to attack, Space / A / RB to roll, Q / Y / wheel to
+## swap between the loud RIFLE and the quiet BLADE, E / X to interact.
+## The blade's 3-hit combo silently kills unaware bugs and parries turret beams.
 
 signal health_changed(current: float, maximum: float)
 signal died
+
+enum Weapon { RIFLE, BLADE }
 
 @export_group("Movement")
 @export var move_speed := 9.5
@@ -25,6 +29,19 @@ signal died
 @export var spread_degrees := 3.5
 @export var projectile_knockback := 6.5
 @export var barrel_offset := 0.14
+
+@export_group("Blade")
+@export var blade_damage := 26.0
+@export var blade_finisher_damage := 48.0
+@export var blade_range := 2.5
+@export var blade_arc_degrees := 140.0
+@export var blade_finisher_arc_degrees := 230.0
+@export var blade_cooldown := 0.24
+@export var blade_combo_window := 0.6
+@export var blade_lunge := 7.0
+@export var blade_knockback := 5.0
+## Seconds after a swing during which turret beams from the front are reflected.
+@export var parry_window := 0.25
 
 @export_group("Dash")
 @export var dash_speed := 30.0
@@ -69,6 +86,21 @@ var _ghosts: Array[MeshInstance3D] = []
 var _ghost_index := 0
 var _ghost_mesh: Mesh
 
+var weapon := Weapon.RIFLE
+var current_interactable: Interactable
+var auto_interact := false
+var auto_weapon := -1
+var _blade_cd := 0.0
+var _combo_step := 0
+var _combo_t := 0.0
+var _parry_t := 0.0
+var _slash_fx: MeshInstance3D
+var _slash_mat: ShaderMaterial
+var _slash_t := 0.0
+var _arc_mesh: ArrayMesh
+var _finisher_mesh: ArrayMesh
+var _blade_node: Node3D
+
 
 func _ready() -> void:
 	Game.player = self
@@ -77,6 +109,8 @@ func _ready() -> void:
 	muzzle_light.light_energy = 0.0
 	_ghost_mesh = ($Visual/Body as MeshInstance3D).mesh
 	_build_ghosts()
+	_build_blade()
+	_apply_weapon_visuals()
 	health_changed.emit(health, max_health)
 	Game.player_health_changed.emit(health, max_health)
 
@@ -87,6 +121,11 @@ func _physics_process(delta: float) -> void:
 	_fire_cd = maxf(_fire_cd - delta, 0.0)
 	_dash_cd = maxf(_dash_cd - delta, 0.0)
 	_invuln = maxf(_invuln - delta, 0.0)
+	_blade_cd = maxf(_blade_cd - delta, 0.0)
+	_parry_t = maxf(_parry_t - delta, 0.0)
+	_combo_t = maxf(_combo_t - delta, 0.0)
+	_update_weapon_input()
+	_update_interact()
 
 	_update_aim()
 
@@ -120,11 +159,18 @@ func _physics_process(delta: float) -> void:
 	global_position.y = 0.0
 
 	_update_facing(delta)
-	_update_shooting()
+	if weapon == Weapon.RIFLE:
+		_update_shooting()
+	else:
+		_update_blade()
 
 
 func _process(delta: float) -> void:
 	_update_ghosts(delta)
+	if _slash_t > 0.0:
+		_slash_t -= delta
+		_slash_mat.set_shader_parameter("fade", clampf(_slash_t / 0.16, 0.0, 1.0))
+		_slash_fx.visible = _slash_t > 0.0
 	if _flash_t > 0.0:
 		_flash_t -= delta
 		muzzle_flash.visible = _flash_t > 0.0
@@ -217,6 +263,193 @@ func _update_shooting() -> void:
 	muzzle_light.light_energy = 3.0
 	if Game.fx:
 		Game.fx.on_player_shot()
+	if Game.director:
+		Game.director.make_noise(global_position, Game.director.gun_noise_radius, Game.director.gun_noise_alert)
+
+
+# --------------------------------------------------------------------------
+# Weapons, blade, interaction
+# --------------------------------------------------------------------------
+
+func _update_weapon_input() -> void:
+	if autopilot:
+		if auto_weapon >= 0 and auto_weapon != weapon:
+			set_weapon(auto_weapon)
+		return
+	if Input.is_action_just_pressed("swap_weapon"):
+		set_weapon(Weapon.BLADE if weapon == Weapon.RIFLE else Weapon.RIFLE)
+
+
+func _unhandled_input(event: InputEvent) -> void:
+	if not alive or autopilot:
+		return
+	if event is InputEventMouseButton and event.pressed:
+		if event.button_index == MOUSE_BUTTON_WHEEL_UP or event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+			set_weapon(Weapon.BLADE if weapon == Weapon.RIFLE else Weapon.RIFLE)
+
+
+func set_weapon(w: int) -> void:
+	if w == weapon:
+		return
+	weapon = w
+	_combo_step = 0
+	_apply_weapon_visuals()
+	Game.weapon_changed.emit(weapon)
+
+
+func _apply_weapon_visuals() -> void:
+	$Visual/Gun.visible = weapon == Weapon.RIFLE
+	if _blade_node:
+		_blade_node.visible = weapon == Weapon.BLADE
+
+
+func _update_blade() -> void:
+	if _dash_t > 0.0 or _blade_cd > 0.0:
+		return
+	var wants := auto_fire if autopilot else Input.is_action_pressed("fire")
+	if wants:
+		_blade_attack()
+
+
+func _blade_attack() -> void:
+	_combo_step = (_combo_step % 3) + 1 if _combo_t > 0.0 else 1
+	_combo_t = blade_combo_window
+	var finisher := _combo_step == 3
+	_blade_cd = blade_cooldown * (1.5 if finisher else 1.0)
+	_parry_t = parry_window
+	var arc := blade_finisher_arc_degrees if finisher else blade_arc_degrees
+	var reach := blade_range * (1.15 if finisher else 1.0)
+	var dmg := blade_finisher_damage if finisher else blade_damage
+	_knock += aim_dir * blade_lunge * (1.4 if finisher else 1.0)
+	_show_slash(finisher)
+
+	var cos_half := cos(deg_to_rad(arc * 0.5))
+	var hits := 0
+	if Game.spawner:
+		for e in Game.spawner.enemies_in_radius(global_position, reach):
+			var to := e.global_position - global_position
+			to.y = 0.0
+			var d := to.length()
+			var dir := to / d if d > 0.01 else aim_dir
+			if d > 0.5 and aim_dir.dot(dir) < cos_half:
+				continue
+			if e.can_be_assassinated(global_position - e.global_position):
+				e.assassinate(dir, dmg)
+			else:
+				e.take_hit(dmg, dir, blade_knockback * (1.6 if finisher else 1.0), Game.TEAM_PLAYER, &"slash")
+			hits += 1
+	for t in Game.damageables.duplicate():
+		if not is_instance_valid(t) or not t.is_alive():
+			continue
+		var to2: Vector3 = t.global_position - global_position
+		to2.y = 0.0
+		if to2.length() <= reach + t.hit_radius and (to2.length() < 0.5 or aim_dir.dot(to2.normalized()) >= cos_half):
+			t.take_hit(dmg, to2.normalized(), 0.0, Game.TEAM_PLAYER, &"slash")
+			hits += 1
+	if hits > 0:
+		Game.hitstop(0.03 if not finisher else 0.06)
+		Game.shake(0.08 if not finisher else 0.2)
+		if Game.director:
+			Game.director.make_noise(global_position, Game.director.blade_noise_radius, Game.director.blade_noise_alert)
+
+
+## True while a recent swing faces `source` (used by turrets to reflect beams).
+func is_parrying_toward(source: Vector3) -> bool:
+	if _parry_t <= 0.0 or weapon != Weapon.BLADE:
+		return false
+	var to := source - global_position
+	to.y = 0.0
+	return to.length_squared() > 0.01 and aim_dir.dot(to.normalized()) > 0.5
+
+
+func _show_slash(finisher: bool) -> void:
+	_slash_fx.mesh = _finisher_mesh if finisher else _arc_mesh
+	_slash_fx.global_position = global_position + Vector3.UP * 1.0
+	_slash_fx.rotation = Vector3(0.0, atan2(-aim_dir.x, -aim_dir.z), 0.0)
+	_slash_fx.scale = Vector3(-1.0 if _combo_step == 2 else 1.0, 1.0, 1.0)
+	var c := Color("ff2bd6") if finisher else (Color("19f4ff") if _combo_step == 1 else Color("7ff5ff"))
+	_slash_mat.set_shader_parameter("tint", c)
+	_slash_mat.set_shader_parameter("fade", 1.0)
+	_slash_fx.visible = true
+	_slash_t = 0.16
+
+
+func _build_blade() -> void:
+	var blade_mat := StandardMaterial3D.new()
+	blade_mat.albedo_color = Color(0.1, 0.3, 0.35)
+	blade_mat.emission_enabled = true
+	blade_mat.emission = Color("19f4ff")
+	blade_mat.emission_energy_multiplier = 4.0
+	var hilt_mat := StandardMaterial3D.new()
+	hilt_mat.albedo_color = Color("1c1f23")
+	_blade_node = Node3D.new()
+	_blade_node.position = Vector3(0.38, 1.05, -0.35)
+	_blade_node.rotation_degrees = Vector3(-70, 0, 0)
+	visual.add_child(_blade_node)
+	var blade := MeshInstance3D.new()
+	var bm := BoxMesh.new()
+	bm.size = Vector3(0.06, 1.1, 0.02)
+	blade.mesh = bm
+	blade.material_override = blade_mat
+	blade.position = Vector3(0, 0.62, 0)
+	_blade_node.add_child(blade)
+	var hilt := MeshInstance3D.new()
+	var hm := BoxMesh.new()
+	hm.size = Vector3(0.08, 0.22, 0.08)
+	hilt.mesh = hm
+	hilt.material_override = hilt_mat
+	_blade_node.add_child(hilt)
+
+	_arc_mesh = _make_arc(blade_range, blade_arc_degrees)
+	_finisher_mesh = _make_arc(blade_range * 1.15, blade_finisher_arc_degrees)
+	_slash_mat = ShaderMaterial.new()
+	_slash_mat.shader = preload("res://scripts/shaders/neon_fade.gdshader")
+	_slash_mat.set_shader_parameter("energy", 3.5)
+	_slash_mat.set_shader_parameter("edge_softness", 0.0)
+	_slash_fx = MeshInstance3D.new()
+	_slash_fx.material_override = _slash_mat
+	_slash_fx.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_slash_fx.top_level = true
+	_slash_fx.visible = false
+	add_child(_slash_fx)
+
+
+## Flat crescent in front of the player (-Z), thicker in the middle.
+func _make_arc(reach: float, arc_deg: float) -> ArrayMesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var steps := 24
+	var half := deg_to_rad(arc_deg * 0.5)
+	for i in steps:
+		var a0 := lerpf(-half, half, float(i) / steps)
+		var a1 := lerpf(-half, half, float(i + 1) / steps)
+		var w0 := 0.35 + 0.65 * sin(PI * float(i) / steps)
+		var w1 := 0.35 + 0.65 * sin(PI * float(i + 1) / steps)
+		var o0 := Vector3(sin(a0), 0, -cos(a0)) * reach
+		var o1 := Vector3(sin(a1), 0, -cos(a1)) * reach
+		var n0 := Vector3(sin(a0), 0, -cos(a0)) * (reach - 0.8 * w0)
+		var n1 := Vector3(sin(a1), 0, -cos(a1)) * (reach - 0.8 * w1)
+		for v in [n0, o0, o1, n0, o1, n1]:
+			st.set_normal(Vector3.UP)
+			st.add_vertex(v)
+	return st.commit()
+
+
+func _update_interact() -> void:
+	var best: Interactable = null
+	var best_d := INF
+	for it in Game.interactables:
+		var d := Vector2(it.global_position.x - global_position.x, it.global_position.z - global_position.z).length()
+		if d <= it.radius and d < best_d:
+			best = it
+			best_d = d
+	current_interactable = best
+	if best == null or not best.enabled:
+		return
+	var pressed := auto_interact if autopilot else Input.is_action_just_pressed("interact")
+	if pressed:
+		auto_interact = false
+		best.use(self)
 
 
 # --------------------------------------------------------------------------
@@ -321,4 +554,4 @@ func _die() -> void:
 	if Game.fx:
 		Game.fx.on_player_death(global_position + Vector3.UP * 0.8)
 	died.emit()
-	Game.trigger_game_over()
+	Game.on_player_died()

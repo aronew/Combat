@@ -60,8 +60,8 @@ func _physics_process(delta: float) -> void:
 	if Game.spawner:
 		var enemy := Game.spawner.find_enemy_on_segment(from, seg_end, hit_radius)
 		if enemy:
-			enemy.take_hit(_damage, _velocity.normalized(), _knockback)
-			if Game.fx:
+			var dealt := enemy.take_hit(_damage, _velocity.normalized(), _knockback, Game.TEAM_PLAYER, &"bullet")
+			if Game.fx and dealt > 0.0:
 				Game.fx.on_projectile_hit(enemy.global_position + Vector3.UP * 0.4, _velocity.normalized())
 			_pierced += 1
 			if _pierced > pierce:
@@ -69,6 +69,9 @@ func _physics_process(delta: float) -> void:
 				return
 
 	if not wall.is_empty():
+		var col: Object = wall.collider
+		if col and col.has_method("take_hit") and not (col is Enemy):
+			col.take_hit(_damage, _velocity.normalized(), _knockback, Game.TEAM_PLAYER, &"bullet")
 		if Game.fx:
 			Game.fx.on_wall_hit(wall.position, wall.normal)
 		deactivate()

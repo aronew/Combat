@@ -2,13 +2,16 @@
 
 [ext_resource type="Script" path="res://scripts/main.gd" id="1_main"]
 [ext_resource type="Script" path="res://scripts/environment_controller.gd" id="2_env"]
-[ext_resource type="PackedScene" path="res://scenes/arena.tscn" id="3_arena"]
+[ext_resource type="PackedScene" path="res://scenes/level.tscn" id="3_level"]
 [ext_resource type="PackedScene" path="res://scenes/player.tscn" id="4_player"]
 [ext_resource type="PackedScene" path="res://scenes/camera_rig.tscn" id="5_cam"]
 [ext_resource type="PackedScene" path="res://scenes/spawner.tscn" id="6_spawner"]
 [ext_resource type="Script" path="res://scripts/projectile_pool.gd" id="7_pool"]
 [ext_resource type="Script" path="res://scripts/fx.gd" id="8_fx"]
 [ext_resource type="PackedScene" path="res://ui/hud.tscn" id="9_hud"]
+[ext_resource type="Script" path="res://scripts/pickups.gd" id="10_pickups"]
+[ext_resource type="Script" path="res://scripts/hive_director.gd" id="11_director"]
+[ext_resource type="Script" path="res://scripts/mission.gd" id="12_mission"]
 
 [sub_resource type="Environment" id="Env_main"]
 background_mode = 1
@@ -29,10 +32,10 @@ shadow_enabled = true
 shadow_opacity = 0.8
 directional_shadow_max_distance = 70.0
 
-[node name="Arena" parent="." instance=ExtResource("3_arena")]
+[node name="Level" parent="." instance=ExtResource("3_level")]
 
 [node name="Player" parent="." instance=ExtResource("4_player")]
-position = Vector3(0, 0, 3)
+position = Vector3(0, 0, 16.5)
 
 [node name="CameraRig" parent="." instance=ExtResource("5_cam")]
 target_path = NodePath("../Player")
@@ -44,5 +47,14 @@ script = ExtResource("7_pool")
 
 [node name="FX" type="Node3D" parent="."]
 script = ExtResource("8_fx")
+
+[node name="Pickups" type="Node3D" parent="."]
+script = ExtResource("10_pickups")
+
+[node name="HiveDirector" type="Node" parent="."]
+script = ExtResource("11_director")
+
+[node name="Mission" type="Node3D" parent="."]
+script = ExtResource("12_mission")
 
 [node name="HUD" parent="." instance=ExtResource("9_hud")]
