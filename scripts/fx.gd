@@ -124,6 +124,10 @@ func on_enemy_hit(pos: Vector3, damage: float, killed: bool, kind: StringName = 
 			col = Color("ffb21e")
 			s *= 1.4
 			text += "!"
+		&"counter":
+			col = Color("ff2bd6")
+			s *= 1.7
+			text += "!"
 		&"burn":
 			col = Color("ff7a1a")
 			s *= 0.75

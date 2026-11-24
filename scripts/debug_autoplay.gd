@@ -32,6 +32,10 @@ var _stall := {}
 var _ended := false
 var _gear := ""
 var _loot_demo := false
+var _blade := false
+var _counters := 0
+var _strikes := 0
+var _best_chain := 0
 
 
 func _ready() -> void:
@@ -63,6 +67,8 @@ func _ready() -> void:
 			Profile.data.perks = {}
 			Profile.data.equipped = {"gun": Loot.starter_gun(), "blade": Loot.starter_blade()}
 			Profile._touch()
+		elif arg == "--blade":
+			_blade = true
 		elif arg == "--loot-demo":
 			_loot_demo = true
 		elif arg.begins_with("--gear="):
@@ -164,6 +170,9 @@ func _process(delta: float) -> void:
 	if _quit_after > 0.0 and _t >= _quit_after and not _capturing:
 		print("[autoplay] done: phase=%s kills=%d rescued=%d" % [
 			PHASES[Game.mission.phase] if Game.mission else "-", Game.kills, Game.spawner.rescued if Game.spawner else 0])
+		if _blade and Game.player:
+			print("[autoplay] blade: strikes=%d counters=%d best_chain=%d best_combo=%d" % [
+				Game.player.stat_strikes, Game.player.stat_counters, _best_chain, Game.best_combo])
 		get_tree().quit()
 	elif _ended and _quit_after <= 0.0 and Game.is_game_over and _go_shot_t < 0.0 and not _capturing and not _test_restart:
 		get_tree().quit()
@@ -236,6 +245,15 @@ func _drive(delta: float) -> void:
 		p.auto_fire = sleeper_d < 2.2
 		var to_s := sleeper.global_position - pos
 		move = to_s.normalized() if sleeper_d > 1.6 else Vector3.ZERO
+	elif _blade and nearest and best < 9.0:
+		# Blade dance: aim at the nearest bug and keep cutting; the target
+		# assist and dash-strikes do the rest. Hold position otherwise.
+		p.auto_weapon = Player.Weapon.BLADE
+		p.auto_aim = nearest.global_position
+		p.auto_fire = true
+		_best_chain = maxi(_best_chain, p.get_blade_chain())
+		if best < 3.0:
+			move = Vector3.ZERO
 	elif nearest and best < 14.0:
 		p.auto_weapon = Player.Weapon.RIFLE
 		p.auto_aim = nearest.global_position

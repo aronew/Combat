@@ -4,6 +4,11 @@ extends CharacterBody3D
 ## aim, LMB / right trigger to attack, Space / A / RB to roll, Q / Y / wheel to
 ## swap between the loud RIFLE and the quiet BLADE, E / X to interact.
 ## The blade's 3-hit combo silently kills unaware bugs and parries turret beams.
+## Blade flow: swings lock onto the best bug in front of you; bugs out of reach
+## get a dash-strike (you zip to them, invincible, and cut on arrival). Hits in
+## quick succession build a CHAIN (more damage, longer dash-strikes), and
+## cutting a bug while it rears up to bite is a COUNTER (big damage through
+## shields, slow-motion, a little health back).
 
 signal health_changed(current: float, maximum: float)
 signal died
@@ -32,6 +37,30 @@ enum Weapon { RIFLE, BLADE }
 @export var blade_knockback := 5.0
 ## Seconds after a swing during which turret beams from the front are reflected.
 @export var parry_window := 0.25
+
+@export_group("Blade flow")
+## Target assist: swings snap toward the best bug inside this range and cone.
+@export var assist_range := 6.5
+@export var assist_cone_degrees := 120.0
+## Targets beyond normal reach get a dash-strike at this speed, stopping this far away.
+@export var strike_speed := 42.0
+@export var strike_stop_distance := 1.15
+@export var strike_max_time := 0.28
+## Seconds between dash-strikes (halved while the chain is 3+). In between,
+## out-of-reach targets get a normal lunging swing.
+@export var strike_cooldown := 0.6
+## Hits within this many seconds of each other keep the chain alive.
+@export var chain_window := 1.5
+## Extra damage per chain link, and the cap.
+@export var chain_damage_step := 0.08
+@export var chain_damage_max := 0.8
+## Extra dash-strike range once the chain reaches 3.
+@export var chain_range_bonus := 2.5
+## Counter: a cut that lands while the bug winds up a bite.
+@export var counter_damage_mult := 3.5
+@export var counter_heal := 2.0
+## Real seconds of slow-motion after a counter.
+@export var counter_slowmo := 0.32
 
 @export_group("Dash")
 @export var dash_speed := 30.0
@@ -96,6 +125,27 @@ var _slash_t := 0.0
 var _arc_mesh: ArrayMesh
 var _finisher_mesh: ArrayMesh
 var _blade_node: Node3D
+var _strike_t := 0.0
+var _strike_target: Enemy
+var _strike_dir := Vector3.ZERO
+var _strike_from := Vector3.ZERO
+var _strike_cd := 0.0
+var _face_t := 0.0
+var _face_dir := Vector3.FORWARD
+var _chain := 0
+var _chain_t := 0.0
+var _swing_t := 0.0
+var _swing_from := 0.0
+var _swing_to := 0.0
+var _swing_dur := 0.13
+var _streak: MeshInstance3D
+var _streak_mat: ShaderMaterial
+var _streak_t := 0.0
+var _assist_ray := PhysicsRayQueryParameters3D.new()
+const SWING_TIME := 0.13
+## Run stats (read by the autoplay bot).
+var stat_strikes := 0
+var stat_counters := 0
 
 ## Loadout from Profile: the stat sheet and resolved gun / blade numbers.
 var stats := {}
@@ -152,6 +202,12 @@ func _physics_process(delta: float) -> void:
 	_blade_cd = maxf(_blade_cd - delta, 0.0)
 	_parry_t = maxf(_parry_t - delta, 0.0)
 	_combo_t = maxf(_combo_t - delta, 0.0)
+	_face_t = maxf(_face_t - delta, 0.0)
+	_strike_cd = maxf(_strike_cd - delta, 0.0)
+	if _chain > 0:
+		_chain_t -= delta
+		if _chain_t <= 0.0:
+			_set_chain(0)
 	_tick_buffs(delta)
 	_update_weapon_input()
 	_update_interact()
@@ -164,9 +220,12 @@ func _physics_process(delta: float) -> void:
 		wish = Game.camera_rig.get_flat_basis() * wish
 
 	if _wants_dash() and _dash_cd <= 0.0 and _dash_t <= 0.0:
+		_strike_t = 0.0
 		_start_dash(wish)
 
-	if _dash_t > 0.0:
+	if _strike_t > 0.0:
+		_tick_strike(delta)
+	elif _dash_t > 0.0:
 		_dash_t -= delta
 		velocity = _dash_dir * dash_speed * (1.4 if Profile.has_legendary("phase_step") else 1.0)
 		_ghost_t -= delta
@@ -202,6 +261,11 @@ func _process(delta: float) -> void:
 		_slash_t -= delta
 		_slash_mat.set_shader_parameter("fade", clampf(_slash_t / 0.16, 0.0, 1.0))
 		_slash_fx.visible = _slash_t > 0.0
+	if _streak_t > 0.0:
+		_streak_t -= delta
+		_streak_mat.set_shader_parameter("fade", clampf(_streak_t / 0.2, 0.0, 1.0))
+		_streak.visible = _streak_t > 0.0
+	_animate_blade(delta)
 	if _flash_t > 0.0:
 		_flash_t -= delta
 		muzzle_flash.visible = _flash_t > 0.0
@@ -276,7 +340,8 @@ func get_aim_offset() -> Vector3:
 
 
 func _update_facing(delta: float) -> void:
-	var target_yaw := atan2(-aim_dir.x, -aim_dir.z)
+	var f := _face_dir if (_face_t > 0.0 or _strike_t > 0.0) else aim_dir
+	var target_yaw := atan2(-f.x, -f.z)
 	visual.rotation.y = lerp_angle(visual.rotation.y, target_yaw, 1.0 - exp(-turn_speed * delta))
 
 
@@ -355,41 +420,149 @@ func _apply_weapon_visuals() -> void:
 
 
 func _update_blade() -> void:
-	if _dash_t > 0.0 or _blade_cd > 0.0:
+	if _dash_t > 0.0 or _strike_t > 0.0 or _blade_cd > 0.0:
 		return
-	var wants := _wants_fire()
-	if wants:
+	if _wants_fire():
 		_blade_attack()
 
 
+## Pick a target (assist), then either swing now or dash-strike to it.
 func _blade_attack() -> void:
+	var reach_range := assist_range + (chain_range_bonus if _chain >= 3 else 0.0)
+	var target := _find_blade_target(reach_range)
+	if target:
+		var to := target.global_position - global_position
+		to.y = 0.0
+		var d := to.length()
+		var dir := to / d if d > 0.01 else aim_dir
+		if d > blade_range * 0.8 and _strike_cd <= 0.0:
+			_start_strike(target, dir, d)
+			return
+		# In reach (or strike recharging): snap to it and step in.
+		_knock += dir * blade_lunge * clampf((d - 0.8) / 1.2, 0.25, 1.4)
+		_swing(dir)
+		return
+	_knock += aim_dir * blade_lunge
+	_swing(aim_dir)
+
+
+## Best bug for the blade: close, near where you aim, reachable. Bugs winding
+## up a bite are preferred (counter chances).
+func _find_blade_target(max_range: float) -> Enemy:
+	if Game.spawner == null:
+		return null
+	var best: Enemy = null
+	var best_score := INF
+	var cos_half := cos(deg_to_rad(assist_cone_degrees * 0.5))
+	for e in Game.spawner.enemies_in_radius(global_position, max_range):
+		if not e.is_targetable():
+			continue
+		var to := e.global_position - global_position
+		to.y = 0.0
+		var d := to.length()
+		var dot := aim_dir.dot(to / d) if d > 0.01 else 1.0
+		if d > 1.2 and dot < cos_half:
+			continue
+		var score := d + (1.0 - dot) * 5.0
+		if e.is_counterable():
+			score -= 2.5
+		if e.is_unaware():
+			score -= 1.0
+		if score < best_score and (d < 1.5 or _clear_path_to(e)):
+			best = e
+			best_score = score
+	return best
+
+
+func _clear_path_to(e: Enemy) -> bool:
+	_assist_ray.from = global_position + Vector3.UP * 0.6
+	_assist_ray.to = e.global_position + Vector3.UP * 0.6
+	_assist_ray.collision_mask = 1
+	_assist_ray.exclude = [get_rid()]
+	return get_world_3d().direct_space_state.intersect_ray(_assist_ray).is_empty()
+
+
+func _start_strike(target: Enemy, dir: Vector3, dist: float) -> void:
+	stat_strikes += 1
+	_strike_target = target
+	_strike_dir = dir
+	_strike_from = global_position
+	_strike_t = clampf((dist - strike_stop_distance) / strike_speed + 0.06, 0.06, strike_max_time)
+	_invuln = maxf(_invuln, _strike_t + 0.04)
+	_strike_cd = strike_cooldown * (0.5 if _chain >= 3 else 1.0)
+	_face_dir = dir
+	_ghost_t = 0.0
+	_blade_cd = _strike_t + 0.02
+	if Game.fx:
+		Game.fx.on_player_dash(global_position)
+
+
+func _tick_strike(delta: float) -> void:
+	_strike_t -= delta
+	var t := _strike_target
+	var arrived := false
+	if t and t.is_targetable():
+		var to := t.global_position - global_position
+		to.y = 0.0
+		var d := to.length()
+		if d > 0.01:
+			_strike_dir = to / d
+		arrived = d <= strike_stop_distance
+	_face_dir = _strike_dir
+	velocity = Vector3.ZERO if arrived else _strike_dir * strike_speed
+	_ghost_t -= delta
+	if _ghost_t <= 0.0:
+		_ghost_t = dash_ghost_interval
+		_spawn_ghost()
+	if arrived or _strike_t <= 0.0:
+		_strike_t = 0.0
+		velocity = _strike_dir * 2.0
+		_show_streak(_strike_from, global_position)
+		_swing(_strike_dir)
+
+
+## One cut in `dir`: hits everything in the arc, counters bugs mid wind-up.
+func _swing(dir: Vector3) -> void:
 	_combo_step = (_combo_step % 3) + 1 if _combo_t > 0.0 else 1
 	_combo_t = blade_combo_window
 	var finisher := _combo_step == 3
 	_blade_cd = blade_cooldown * (1.5 if finisher else 1.0)
 	_parry_t = parry_window
+	_face_dir = dir
+	_face_t = 0.18
 	var arc := blade_finisher_arc_degrees if finisher else blade_arc_degrees
 	var reach := blade_range * (1.15 if finisher else 1.0)
-	var dmg := blade_finisher_damage if finisher else blade_damage
-	_knock += aim_dir * blade_lunge * (1.4 if finisher else 1.0)
-	_show_slash(finisher)
+	var chain_mult := 1.0 + minf(chain_damage_step * _chain, chain_damage_max)
+	var dmg := (blade_finisher_damage if finisher else blade_damage) * chain_mult
+	_show_slash(finisher, dir)
+	_start_swing_anim(finisher)
 
 	var cos_half := cos(deg_to_rad(arc * 0.5))
 	var hits := 0
+	var counters := 0
 	if Game.spawner:
-		for e in Game.spawner.enemies_in_radius(global_position, reach):
+		for e in Game.spawner.enemies_in_radius(global_position, reach + 0.4):
+			if not e.is_active():
+				continue
 			var to := e.global_position - global_position
 			to.y = 0.0
 			var d := to.length()
-			var dir := to / d if d > 0.01 else aim_dir
-			if d > 0.5 and aim_dir.dot(dir) < cos_half:
+			if d > reach + e.get_hit_radius():
+				continue
+			var edir := to / d if d > 0.01 else dir
+			if d > 0.7 and dir.dot(edir) < cos_half:
 				continue
 			if e.can_be_assassinated(global_position - e.global_position):
-				e.assassinate(dir, dmg)
+				e.assassinate(edir, dmg)
+			elif e.is_counterable():
+				counters += 1
+				var dealt_c := e.take_hit(dmg * counter_damage_mult, edir, blade_knockback * 2.0, Game.TEAM_PLAYER, &"counter")
+				if dealt_c > 0.0 and e.is_active():
+					_blade_elements(e, dealt_c)
 			else:
 				var crit := randf() < float(blade.get("crit_chance", 0.05))
 				var d_hit := dmg * (float(blade.get("crit_mult", 1.5)) if crit else 1.0)
-				var dealt := e.take_hit(d_hit, dir, blade_knockback * (1.6 if finisher else 1.0), Game.TEAM_PLAYER, &"slash_crit" if crit else &"slash")
+				var dealt := e.take_hit(d_hit, edir, blade_knockback * (1.6 if finisher else 1.0), Game.TEAM_PLAYER, &"slash_crit" if crit else &"slash")
 				if dealt > 0.0 and e.is_active():
 					_blade_elements(e, dealt)
 			hits += 1
@@ -398,14 +571,37 @@ func _blade_attack() -> void:
 			continue
 		var to2: Vector3 = t.global_position - global_position
 		to2.y = 0.0
-		if to2.length() <= reach + t.hit_radius and (to2.length() < 0.5 or aim_dir.dot(to2.normalized()) >= cos_half):
+		if to2.length() <= reach + t.hit_radius and (to2.length() < 0.5 or dir.dot(to2.normalized()) >= cos_half):
 			t.take_hit(dmg, to2.normalized(), 0.0, Game.TEAM_PLAYER, &"slash")
 			hits += 1
 	if hits > 0:
+		_set_chain(_chain + 1)
 		Game.hitstop(0.03 if not finisher else 0.06)
 		Game.shake(0.08 if not finisher else 0.2)
 		if Game.director:
 			Game.director.make_noise(global_position, Game.director.blade_noise_radius, Game.director.blade_noise_alert)
+	if counters > 0:
+		stat_counters += counters
+		Game.hitstop(0.07)
+		Game.slowmo(counter_slowmo, 0.3)
+		Game.shake(0.3)
+		heal(counter_heal * counters)
+		if Game.fx:
+			Game.fx.text_popup(global_position + Vector3.UP * 2.6, "COUNTER!" if counters == 1 else "COUNTER x%d!" % counters, Color("ff2bd6"), 1.25)
+
+
+func _set_chain(n: int) -> void:
+	_chain = n
+	_chain_t = chain_window
+	Game.blade_chain_changed.emit(_chain)
+
+
+func get_blade_chain() -> int:
+	return _chain
+
+
+func is_striking() -> bool:
+	return _strike_t > 0.0
 
 
 ## True while a recent swing faces `source` (used by turrets to reflect beams).
@@ -417,10 +613,10 @@ func is_parrying_toward(source: Vector3) -> bool:
 	return to.length_squared() > 0.01 and aim_dir.dot(to.normalized()) > 0.5
 
 
-func _show_slash(finisher: bool) -> void:
+func _show_slash(finisher: bool, dir: Vector3) -> void:
 	_slash_fx.mesh = _finisher_mesh if finisher else _arc_mesh
 	_slash_fx.global_position = global_position + Vector3.UP * 1.0
-	_slash_fx.rotation = Vector3(0.0, atan2(-aim_dir.x, -aim_dir.z), 0.0)
+	_slash_fx.rotation = Vector3(0.0, atan2(-dir.x, -dir.z), 0.0)
 	_slash_fx.scale = Vector3(-1.0 if _combo_step == 2 else 1.0, 1.0, 1.0)
 	var base_c := Color(blade.get("color", "19f4ff"))
 	var c := Color("ff2bd6") if finisher else (base_c if _combo_step == 1 else base_c.lightened(0.35))
@@ -428,6 +624,42 @@ func _show_slash(finisher: bool) -> void:
 	_slash_mat.set_shader_parameter("fade", 1.0)
 	_slash_fx.visible = true
 	_slash_t = 0.16
+
+
+## Neon streak along a dash-strike path.
+func _show_streak(a: Vector3, b: Vector3) -> void:
+	var flat := Vector3(b.x - a.x, 0.0, b.z - a.z)
+	if flat.length() < 0.5:
+		return
+	_streak.global_position = (a + b) * 0.5 + Vector3.UP * 0.9
+	_streak.rotation = Vector3(0.0, atan2(-flat.x, -flat.z), 0.0)
+	_streak.scale = Vector3(1.0, 1.0, flat.length())
+	_streak_mat.set_shader_parameter("tint", Color(blade.get("color", "19f4ff")))
+	_streak_mat.set_shader_parameter("fade", 1.0)
+	_streak.visible = true
+	_streak_t = 0.2
+
+
+## Sweep the blade across the front (alternating sides), or all the way round on a finisher.
+func _start_swing_anim(finisher: bool) -> void:
+	var side := -1.0 if _combo_step == 2 else 1.0
+	var half := 150.0 if finisher else 80.0
+	_swing_from = side * half
+	_swing_to = -side * half
+	_swing_dur = SWING_TIME * (1.4 if finisher else 1.0)
+	_swing_t = _swing_dur
+
+
+func _animate_blade(delta: float) -> void:
+	if _blade_node == null:
+		return
+	if _swing_t > 0.0:
+		_swing_t = maxf(_swing_t - delta, 0.0)
+		var k := 1.0 - _swing_t / _swing_dur
+		var e := 1.0 - pow(1.0 - clampf(k, 0.0, 1.0), 3.0)
+		_blade_node.rotation_degrees = Vector3(-85.0, lerpf(_swing_from, _swing_to, e), 0.0)
+	else:
+		_blade_node.rotation_degrees = _blade_node.rotation_degrees.lerp(Vector3(-70.0, 0.0, 0.0), clampf(delta * 10.0, 0.0, 1.0))
 
 
 func _build_blade() -> void:
@@ -469,6 +701,20 @@ func _build_blade() -> void:
 	_slash_fx.top_level = true
 	_slash_fx.visible = false
 	add_child(_slash_fx)
+
+	_streak_mat = ShaderMaterial.new()
+	_streak_mat.shader = preload("res://scripts/shaders/neon_fade.gdshader")
+	_streak_mat.set_shader_parameter("energy", 3.0)
+	_streak_mat.set_shader_parameter("edge_softness", 0.5)
+	var sm := BoxMesh.new()
+	sm.size = Vector3(0.22, 0.04, 1.0)
+	_streak = MeshInstance3D.new()
+	_streak.mesh = sm
+	_streak.material_override = _streak_mat
+	_streak.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_streak.top_level = true
+	_streak.visible = false
+	add_child(_streak)
 
 
 ## Flat crescent in front of the player (-Z), thicker in the middle.
@@ -587,11 +833,11 @@ func _tick_buffs(delta: float) -> void:
 
 ## Legendary and perk procs on any kill you caused.
 func on_kill(_e: Enemy, pos: Vector3, kind: StringName) -> void:
-	if not kind in [&"bullet", &"crit", &"slash", &"slash_crit", &"silent", &"burn", &"shock", &"reflect"]:
+	if not kind in [&"bullet", &"crit", &"slash", &"slash_crit", &"counter", &"silent", &"burn", &"shock", &"reflect"]:
 		return
 	if Profile.has_legendary("chain_reaction") and kind != &"silent" and randf() < 0.35:
 		Game.delayed_explode(0.08, pos + Vector3.UP * 0.4, 2.6, float(gun.damage) * 1.5, 0.0, 9.0, null, 1.6)
-	if Profile.has_legendary("reaper") and kind in [&"slash", &"slash_crit", &"silent"]:
+	if Profile.has_legendary("reaper") and kind in [&"slash", &"slash_crit", &"counter", &"silent"]:
 		health = minf(health + 4.0, max_health)
 		_dash_cd = 0.0
 		Game.player_health_changed.emit(health, max_health)

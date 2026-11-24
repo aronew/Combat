@@ -67,6 +67,8 @@ var _combo_tween: Tween
 var _radio_tween: Tween
 var _salvage_tween: Tween
 var _toast_font: Font
+var _chain_label: Label
+var _chain_tween: Tween
 
 
 func _ready() -> void:
@@ -94,6 +96,7 @@ func _ready() -> void:
 	Game.weapon_changed.connect(_on_weapon)
 	Game.loot_picked.connect(_on_loot_picked)
 	Game.level_up.connect(func(_l): _update_xp())
+	Game.blade_chain_changed.connect(_on_blade_chain)
 	if hide_os_cursor:
 		Input.mouse_mode = Input.MOUSE_MODE_HIDDEN
 	kills_label.text = "KILLS  0"
@@ -103,6 +106,21 @@ func _ready() -> void:
 	if Game.player:
 		_on_health(Game.player.health, Game.player.max_health)
 	_update_xp()
+
+
+func _on_blade_chain(count: int) -> void:
+	if _chain_tween:
+		_chain_tween.kill()
+	if count >= 2:
+		_chain_label.text = "BLADE CHAIN x%d" % count
+		_chain_label.pivot_offset = _chain_label.size * Vector2(0.0, 0.5)
+		_chain_label.modulate = Color(1, 1, 1, 1)
+		_chain_label.scale = Vector2(1.25, 1.25)
+		_chain_tween = create_tween().set_ignore_time_scale(true)
+		_chain_tween.tween_property(_chain_label, "scale", Vector2.ONE, 0.15).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	elif _chain_label.modulate.a > 0.0:
+		_chain_tween = create_tween().set_ignore_time_scale(true)
+		_chain_tween.tween_property(_chain_label, "modulate:a", 0.0, 0.35)
 
 
 func _update_xp() -> void:
@@ -403,3 +421,14 @@ func _style() -> void:
 	_label(res_loot, num_bold, 22, Palette.NEON_CYAN, 6)
 	_label(level_label, num_bold, 20, Color("ffd23d"), 5)
 	_toast_font = num_bold
+	# Blade chain counter, under the combo counter.
+	_chain_label = Label.new()
+	_chain_label.offset_left = 44.0
+	_chain_label.offset_top = 206.0
+	_chain_label.offset_right = 520.0
+	_chain_label.offset_bottom = 246.0
+	_chain_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_label(_chain_label, title, 28, Palette.NEON_MAGENTA, 8)
+	_chain_label.add_theme_color_override("font_outline_color", Color("1a0622"))
+	_chain_label.modulate.a = 0.0
+	add_child(_chain_label)
