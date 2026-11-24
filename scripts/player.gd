@@ -21,9 +21,25 @@ enum Weapon { RIFLE, BLADE }
 @export var deceleration := 110.0
 @export var turn_speed := 28.0
 
+## Reversing direction accelerates this much harder, so turn-arounds feel snappy.
+@export var turnaround_boost := 1.9
+## Dash and blade presses this many seconds early still count (input buffer).
+@export var input_buffer := 0.16
+
+@export_group("Body animation")
+## Procedural animation on the primitive body: lean into movement, run bob and
+## leg swing, recoil kick, squash and stretch on the roll, flinch when hit.
+@export var lean_forward := 0.16
+@export var lean_side := 0.12
+@export var stride_length := 1.7
+@export var bob_height := 0.07
+@export var leg_swing := 0.75
+@export var recoil_body := 0.1
+@export var recoil_gun := 0.2
+
 @export_group("Aim")
 ## Height of the plane the mouse ray is cast onto (0 = floor).
-@export var aim_plane_height := 0.0
+@export var aim_plane_height := 0.45
 @export var stick_deadzone := 0.25
 
 ## Gun and blade numbers come from the equipped items (Profile -> Loot.GUNS /
@@ -98,6 +114,29 @@ var auto_fire := false
 var auto_dash := false
 
 var _fire_cd := 0.0
+var _dash_buffer := 0.0
+var _attack_buffer := 0.0
+var _lean := Vector2.ZERO  # x = pitch, y = roll (radians)
+var _phase := 0.0
+var _stride_amt := 0.0
+var _recoil := 0.0
+var _gun_kick := 0.0
+var _squash := 0.0
+var _squash_v := 0.0
+var _flinch := Vector2.ZERO
+var _hips: Array[Node3D] = []
+var _gun_node: Node3D
+var _flash_len := 0.045
+var _flash_light := 3.0
+## Per-gun muzzle flash: [scale (x, y, length), duration, light energy].
+const FLASH := {
+	"AR": [Vector3(1.0, 1.0, 2.2), 0.045, 3.0],
+	"SM": [Vector3(0.7, 0.7, 1.6), 0.03, 2.0],
+	"SG": [Vector3(2.0, 1.6, 1.8), 0.07, 6.0],
+	"RL": [Vector3(0.7, 0.7, 5.5), 0.08, 7.0],
+	"HP": [Vector3(1.8, 1.8, 1.4), 0.06, 4.5],
+}
+var _gun_base := Vector3.ZERO
 var _dash_t := 0.0
 var _dash_cd := 0.0
 var _dash_dir := Vector3.ZERO
@@ -191,6 +230,7 @@ func _ready() -> void:
 	_ghost_mesh = ($Visual/Body as MeshInstance3D).mesh
 	_build_ghosts()
 	_build_blade()
+	_setup_body_rig()
 	_apply_weapon_visuals()
 	health_changed.emit(health, max_health)
 	Game.player_health_changed.emit(health, max_health)
@@ -199,8 +239,9 @@ func _ready() -> void:
 func _physics_process(delta: float) -> void:
 	if not alive:
 		return
-	_fire_cd = maxf(_fire_cd - delta, 0.0)
+	_fire_cd -= delta  # may go negative: carried into the next shot (exact fire rates)
 	_dash_cd = maxf(_dash_cd - delta, 0.0)
+	_attack_buffer = maxf(_attack_buffer - delta, 0.0)
 	_invuln = maxf(_invuln - delta, 0.0)
 	_blade_cd = maxf(_blade_cd - delta, 0.0)
 	_parry_t = maxf(_parry_t - delta, 0.0)
@@ -222,7 +263,12 @@ func _physics_process(delta: float) -> void:
 	if Game.camera_rig and not autopilot:  # the bot steers in world space
 		wish = Game.camera_rig.get_flat_basis() * wish
 
-	if _wants_dash() and _dash_cd <= 0.0 and _dash_t <= 0.0:
+	# Buffered: a press shortly before the roll is ready still rolls.
+	if _wants_dash():
+		_dash_buffer = input_buffer
+	_dash_buffer = maxf(_dash_buffer - delta, 0.0)
+	if _dash_buffer > 0.0 and _dash_cd <= 0.0 and _dash_t <= 0.0:
+		_dash_buffer = 0.0
 		_strike_t = 0.0
 		_start_dash(wish)
 
@@ -242,6 +288,9 @@ func _physics_process(delta: float) -> void:
 	else:
 		var target := wish * current_move_speed()
 		var rate := acceleration if wish.length_squared() > 0.01 else deceleration
+		# Turning against your momentum bites harder (no ice-skating turn-arounds).
+		if wish.length_squared() > 0.01 and velocity.length_squared() > 1.0 and wish.dot(velocity.normalized()) < -0.2:
+			rate *= turnaround_boost
 		velocity = velocity.move_toward(target, rate * delta)
 
 	velocity += _knock
@@ -269,10 +318,11 @@ func _process(delta: float) -> void:
 		_streak_mat.set_shader_parameter("fade", clampf(_streak_t / 0.2, 0.0, 1.0))
 		_streak.visible = _streak_t > 0.0
 	_animate_blade(delta)
+	_animate_body(delta)
 	if _flash_t > 0.0:
 		_flash_t -= delta
 		muzzle_flash.visible = _flash_t > 0.0
-		muzzle_light.light_energy = 3.0 if _flash_t > 0.0 else 0.0
+		muzzle_light.light_energy = _flash_light * clampf(_flash_t / _flash_len, 0.0, 1.0) if _flash_t > 0.0 else 0.0
 	# Blink while invincible after taking damage.
 	if _hurt_t > 0.0 and alive:
 		_hurt_t -= delta
@@ -353,17 +403,28 @@ func _update_facing(delta: float) -> void:
 # --------------------------------------------------------------------------
 
 func _update_shooting() -> void:
-	if not _wants_fire() or _fire_cd > 0.0 or _dash_t > 0.0:
+	if not _wants_fire() or _dash_t > 0.0:
+		_fire_cd = maxf(_fire_cd, 0.0)
 		return
-	_fire_cd = 1.0 / (float(gun.fire_rate) * (1.0 + 0.08 * _adrenal_stacks))
+	if _fire_cd > 0.0:
+		return
+	# Carry the leftover time so the real rate matches the gun's stat at any frame rate.
+	_fire_cd += 1.0 / (float(gun.fire_rate) * (1.0 + 0.08 * _adrenal_stacks))
+	_fire_cd = maxf(_fire_cd, 0.0)
 	_barrel = -_barrel
 	var side := aim_dir.cross(Vector3.UP).normalized()
 	var origin := muzzle.global_position + side * barrel_offset * _barrel
+	# Bolts converge on the cursor (at bolt height), not parallel to the body's aim
+	# line: what's under the crosshair is what gets hit.
+	var shot_dir := aim_dir
+	var to_aim := Vector3(aim_point.x - origin.x, 0.0, aim_point.z - origin.z)
+	if to_aim.length() > 2.0:
+		shot_dir = to_aim.normalized()
 	var pellets := int(gun.pellets)
 	var spread: float = gun.spread
 	if Game.projectiles:
 		for i in pellets:
-			var dir := aim_dir.rotated(Vector3.UP, deg_to_rad(randf_range(-spread, spread)))
+			var dir := shot_dir.rotated(Vector3.UP, deg_to_rad(randf_range(-spread, spread)))
 			var spd: float = gun.speed * (randf_range(0.9, 1.06) if pellets > 1 else 1.0)
 			Game.projectiles.fire(origin, dir, spd, gun.lifetime, _gun_payload)
 		_shot_count += 1
@@ -374,13 +435,29 @@ func _update_shooting() -> void:
 			rail.blast = 0.0
 			rail.color = Color("e6f6ff")
 			rail.scale = 2.2
-			Game.projectiles.fire(origin, aim_dir, 110.0, 0.5, rail)
-	_flash_t = 0.045
+			Game.projectiles.fire(origin, shot_dir, 110.0, 0.5, rail)
+	_recoil = minf(_recoil + 0.35 + float(gun.shake) * 5.0, 1.6)
+	_gun_kick = minf(_gun_kick + 0.6 + float(gun.shake) * 4.0, 1.6)
+	var fl: Array = FLASH.get(String(gun.get("code", "AR")), FLASH.AR)
+	_flash_len = fl[1]
+	_flash_light = fl[2]
+	_flash_t = _flash_len
+	var flash_scale: Vector3 = fl[0]
+	muzzle_flash.scale = flash_scale * randf_range(0.85, 1.15)
+	muzzle_flash.position.z = -0.95 - flash_scale.z * 0.12
+	var fm := muzzle_flash.material_override as ShaderMaterial
+	if fm:
+		fm.set_shader_parameter("tint", Color(gun.color).lerp(Color.WHITE, 0.55))
+	muzzle_light.light_color = Color(gun.color).lerp(Color.WHITE, 0.3)
 	muzzle_flash.visible = true
 	muzzle_flash.rotation.z = randf() * TAU
-	muzzle_light.light_energy = 3.0
+	muzzle_light.light_energy = _flash_light
+	if String(gun.get("code", "")) == "RL" and Game.fx:
+		Game.fx.rail_beam(origin, shot_dir, float(gun.speed) * float(gun.lifetime), Color(gun.color))
 	if Game.fx:
 		Game.fx.on_player_shot(gun.shake)
+	if Game.camera_rig:
+		Game.camera_rig.kick(-shot_dir, float(gun.shake) * 1.3)
 	if Game.director:
 		var noise: float = gun.noise
 		Game.director.make_noise(global_position, Game.director.gun_noise_radius * clampf(noise, 0.4, 1.6), Game.director.gun_noise_alert * noise)
@@ -423,9 +500,13 @@ func _apply_weapon_visuals() -> void:
 
 
 func _update_blade() -> void:
+	# A tap while the blade is busy is remembered briefly and fires when it frees up.
+	if not autopilot and not input_locked and Input.is_action_just_pressed("fire"):
+		_attack_buffer = input_buffer
 	if _dash_t > 0.0 or _strike_t > 0.0 or _blade_cd > 0.0:
 		return
-	if _wants_fire():
+	if _wants_fire() or _attack_buffer > 0.0:
+		_attack_buffer = 0.0
 		_blade_attack()
 
 
@@ -881,8 +962,10 @@ func _start_dash(wish: Vector3) -> void:
 	_ghost_t = 0.0
 	if Profile.has_legendary("bulwark"):
 		_bulwark_t = dash_duration + 1.5
+	_squash_v += 9.0
 	if Game.fx:
 		Game.fx.on_player_dash(global_position)
+		Game.fx.burst(global_position + Vector3.UP * 0.15, -_dash_dir, 0.45, Color(0.75, 0.85, 0.95, 0.5))
 
 
 func is_dashing() -> bool:
@@ -974,6 +1057,10 @@ func take_damage(amount: float, from_position: Vector3) -> bool:
 	away.y = 0.0
 	if away.length_squared() > 0.001:
 		_knock = away.normalized() * hurt_knockback
+		var local := Basis(Vector3.UP, visual.rotation.y).inverse() * away.normalized()
+		_flinch = Vector2(local.z, -local.x) * 0.45
+		if Game.camera_rig:
+			Game.camera_rig.kick(away, 0.35)
 	health_changed.emit(health, max_health)
 	Game.player_health_changed.emit(health, max_health)
 	Game.player_damaged.emit(amount)
@@ -992,3 +1079,75 @@ func _die() -> void:
 		Game.fx.on_player_death(global_position + Vector3.UP * 0.8)
 	died.emit()
 	Game.on_player_died()
+
+
+# --------------------------------------------------------------------------
+# Procedural body animation
+# --------------------------------------------------------------------------
+
+## Hips become pivots so the legs swing from the top, and the gun's rest pose
+## is remembered for the recoil kick.
+func _setup_body_rig() -> void:
+	for name in ["ThighL", "ThighR"]:
+		var thigh := visual.get_node_or_null(name) as Node3D
+		if thigh == null:
+			continue
+		var hip := Node3D.new()
+		hip.name = name + "Hip"
+		hip.position = thigh.position + Vector3(0, 0.14, 0)
+		visual.add_child(hip)
+		thigh.reparent(hip, false)
+		thigh.position = Vector3(0, -0.14, 0)
+		_hips.append(hip)
+	_gun_node = visual.get_node_or_null("Gun") as Node3D
+	if _gun_node:
+		_gun_base = _gun_node.position
+
+
+func _animate_body(delta: float) -> void:
+	if not alive:
+		return
+	var yaw := visual.rotation.y
+	var flat_v := Vector3(velocity.x, 0.0, velocity.z)
+	var local := Basis(Vector3.UP, yaw).inverse() * flat_v
+	var ref := maxf(_base_move_speed, 0.1)
+	var spd := flat_v.length()
+	var ratio := clampf(spd / ref, 0.0, 1.0)
+
+	# Lean into the direction of travel (harder while rolling), smoothed for weight.
+	var target := Vector2(clampf(local.z / ref, -1.3, 1.3) * lean_forward, clampf(-local.x / ref, -1.3, 1.3) * lean_side)
+	_lean = _lean.lerp(target, 1.0 - exp(-14.0 * delta))
+	_flinch = _flinch.lerp(Vector2.ZERO, 1.0 - exp(-10.0 * delta))
+
+	# Stride: phase advances with distance covered, so feet don't skate.
+	_phase = fmod(_phase + spd * delta / stride_length * TAU, TAU)
+	_stride_amt = lerpf(_stride_amt, ratio if _dash_t <= 0.0 else 0.0, 1.0 - exp(-12.0 * delta))
+	var bob := absf(sin(_phase)) * bob_height * _stride_amt
+	var sway := sin(_phase) * 0.045 * _stride_amt
+
+	# Recoil decays fast; the gun snaps back a little slower than the body.
+	_recoil = move_toward(_recoil, 0.0, delta * 9.0)
+	_gun_kick = move_toward(_gun_kick, 0.0, delta * 7.0)
+
+	# Squash and stretch: a damped spring, pushed by the roll start.
+	var sq_target := 1.0 if _dash_t > 0.0 else 0.0
+	_squash_v += ((sq_target - _squash) * 320.0 - _squash_v * 20.0) * delta
+	_squash += _squash_v * delta
+
+	visual.rotation.x = _lean.x + _flinch.x - _recoil * 0.06
+	visual.rotation.z = _lean.y + _flinch.y + sway
+	var back := Basis(Vector3.UP, yaw) * Vector3(0, 0, 1)
+	visual.position = Vector3(0, bob, 0) + back * _recoil * recoil_body
+	var sq := clampf(_squash, -0.6, 1.4)
+	visual.scale = Vector3(1.0 + 0.1 * sq, 1.0 - 0.14 * sq, 1.0 + 0.1 * sq)
+
+	# Legs swing along the direction of travel relative to facing.
+	if _hips.size() == 2:
+		var fw := clampf(-local.z / maxf(spd, 0.1), -1.0, 1.0)
+		var side := clampf(local.x / maxf(spd, 0.1), -1.0, 1.0)
+		var swing := sin(_phase) * leg_swing * _stride_amt
+		_hips[0].rotation = Vector3(swing * fw, 0.0, swing * side * 0.6)
+		_hips[1].rotation = Vector3(-swing * fw, 0.0, -swing * side * 0.6)
+	if _gun_node:
+		_gun_node.position = _gun_base + Vector3(0, 0.02 * _gun_kick, _gun_kick * recoil_gun)
+		_gun_node.rotation.x = _gun_kick * 0.22

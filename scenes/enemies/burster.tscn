@@ -52,6 +52,7 @@ motion_mode = 1
 script = ExtResource("1_burster")
 type_id = &"burster"
 display_name = "Burster"
+ichor_color = Color(0.75, 1, 0.15, 1)
 base_health = 18.0
 base_speed = 6.4
 contact_damage = 0.0

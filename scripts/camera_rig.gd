@@ -33,6 +33,11 @@ var _ahead := Vector3.ZERO
 var _noise := FastNoiseLite.new()
 var _noise_t := 0.0
 var _last_usec := 0
+## Directional kick (recoil, hits): an offset on a stiff spring, separate from shake.
+var _kick := Vector3.ZERO
+var _kick_v := Vector3.ZERO
+@export var kick_stiffness := 220.0
+@export var kick_damping := 20.0
 
 
 func _ready() -> void:
@@ -57,6 +62,14 @@ func apply_framing() -> void:
 	camera.fov = fov
 
 
+## Shove the camera `amount` metres-ish along `dir`; it springs back on its own.
+func kick(dir: Vector3, amount: float) -> void:
+	var d := Vector3(dir.x, 0.0, dir.z)
+	if d.length_squared() < 0.0001:
+		return
+	_kick_v += d.normalized() * amount * 14.0
+
+
 func add_trauma(amount: float) -> void:
 	trauma = clampf(trauma + amount, 0.0, 1.0)
 
@@ -78,7 +91,11 @@ func _process(delta: float) -> void:
 		_ahead = _ahead.lerp(lean, 1.0 - exp(-look_ahead_smoothing * delta))
 		var goal := _target.global_position + _ahead
 		_focus = _focus.lerp(goal, 1.0 - exp(-follow_smoothing * delta))
-		global_position = _focus
+	# Kick runs on real time like shake, so it still settles during hitstop.
+	_kick_v += (-_kick * kick_stiffness - _kick_v * kick_damping) * real_dt
+	_kick += _kick_v * real_dt
+	_kick = _kick.limit_length(0.8)
+	global_position = _focus + _kick
 
 	trauma = maxf(trauma - shake_decay * real_dt, 0.0)
 	_noise_t += real_dt * shake_frequency
