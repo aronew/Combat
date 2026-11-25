@@ -15,8 +15,13 @@ global uniform vec3 cutaway_view;  // flat direction from the player toward the 
 
 uniform bool cut_enabled = true;
 uniform float cut_height = 1.3;
-uniform float cut_radius = 4.5;
-uniform float cut_widen = 0.25;  // the band widens toward the camera
+uniform float cut_radius = 2.2;  // half-width of the cut, metres either side of the sight line
+uniform float cut_widen = 0.15;  // the cut widens a little toward the camera
+uniform float cut_reach = 6.0;  // beyond this (toward the camera) nothing is tall enough to hide her
+uniform float cut_fade = 0.9;  // the edge of the cut dissolves over this many metres
+// Overhead structure (girders, rails): hidden everywhere on the camera side of the player, so
+// it never crosses the screen between the camera and the floor; it stays visible beyond her.
+uniform bool overhead = false;
 // Near walls (the room's camera-side rim) are always cut to waist height, wherever the player is.
 instance uniform bool always_cut = false;
 
@@ -54,12 +59,26 @@ void fragment() {
 		discard;
 	}
 	// (no player set yet, e.g. in the editor: the global's default y is -1000 and nothing is cut)
+	if (overhead && cutaway_player.y > -500.0) {
+		float ahead = dot(wpos.xz - cutaway_player.xz, normalize(cutaway_view.xz + vec2(1e-5)));
+		if (ahead > -2.5) {
+			discard;
+		}
+	}
 	if (cut_enabled && wpos.y > cut_height && cutaway_player.y > -500.0) {
+		// only what stands between the camera and the player: in front of her (toward the
+		// camera), close to the sight line, and near enough to be tall enough to hide her
 		vec2 rel = wpos.xz - cutaway_player.xz;
 		vec2 dir = normalize(cutaway_view.xz + vec2(1e-5));
 		float along = dot(rel, dir);
 		float lateral = length(rel - dir * along);
-		if (along > -1.2 && lateral < cut_radius + max(along, 0.0) * cut_widen) {
+		float r = cut_radius + max(along, 0.0) * cut_widen;
+		float k = smoothstep(r, r - cut_fade, lateral)
+			* smoothstep(-0.2, 0.6, along)
+			* smoothstep(cut_reach, cut_reach - cut_fade * 2.0, along);
+		// dissolve the edge with a screen-space dither instead of a hard line
+		float dither = fract(52.9829189 * fract(dot(FRAGCOORD.xy, vec2(0.06711056, 0.00583715))));
+		if (k > dither * 0.98 + 0.01) {
 			discard;
 		}
 	}
@@ -97,7 +116,15 @@ void fragment() {
 			NORMAL_MAP = texture(normal_tex, wpos.xz * tex_scale).rgb;
 		}
 	}
-	if (!FRONT_FACING) {
+	// Seen from inside (the hollow of a cut wall): judged by the mesh normal, not the face
+	// winding, because the AI-made models have faces wound both ways. Godot flips NORMAL on back
+	// faces; undo that to get the model's own normal back.
+	vec3 own_normal = FRONT_FACING ? NORMAL : -NORMAL;
+	bool inside = dot(own_normal, VIEW) < -0.08;
+	if (!inside) {
+		NORMAL = own_normal;
+	}
+	if (inside) {
 		// the inside of a cut wall: a solid black cap
 		ALBEDO = vec3(0.0);
 		ROUGHNESS = 1.0;
