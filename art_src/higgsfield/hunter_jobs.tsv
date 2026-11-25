@@ -16,3 +16,8 @@ clips/sword_parry.glb	46efee7a-253a-4f43-868e-922a2e7fa218	3d_rigging	animation 
 clips/reload.glb	ead9de2a-a015-4909-87d1-cb4e5f169381	3d_rigging	animation 170 (Standing_Reload)
 clips/hit.glb	efb7311b-92bb-4467-abdd-9177040fc786	3d_rigging	animation 178 (Hit_Reaction)
 clips/death.glb	0b8c8758-e94a-4ebd-993b-69caa688cd02	3d_rigging	animation 183 (Shot_and_Fall_Backward)
+clips/sword_slash_r.glb	3fffd207-5e6a-4b33-aa3b-8f6e9d926a71	3d_rigging	animation 219 (Right_Hand_Sword_Slash)
+clips/sword_slash_l.glb	12e06779-242a-4d54-b782-8a4505a4fcb2	3d_rigging	animation 97 (Left_Slash)
+clips/sword_judgment.glb	aff2052a-6280-440f-927c-8aec944fc935	3d_rigging	animation 102 (Sword_Judgment)
+clips/roll_tight.glb	8ab9e483-9081-4442-8bb7-9547f82f0b63	3d_rigging	animation 161 (Roll_Dodge_3)
+clips/sword_walk_back.glb	b16008e8-d43d-42d1-a1e0-05f879075010	3d_rigging	animation 687 (Walk_Backward_with_Sword_inplace)

@@ -34,7 +34,8 @@ TEX = 1024
 LOOPS = {"idle", "run_forward", "run_back_left", "run_back_right", "strafe_left", "walk_back"}
 # clips whose sideways hip travel is removed: the game moves the character itself (the roll's
 # distance, the lunge of a swing), so the body must stay over the collision capsule
-IN_PLACE = {"roll", "sword_combo", "sword_parry", "hit", "reload"}
+IN_PLACE = {"roll", "sword_combo", "sword_parry", "hit", "reload",
+            "sword_slash_r", "sword_slash_l", "sword_judgment", "roll_tight"}
 # clips cut from (or mirrored from) a downloaded clip: name -> (source, start s, end s, mirror).
 # The game's swings and roll are much faster than the library moves, so it plays just the
 # strike or the tumble, sped up. Times come from the right hand's speed peaks (swings) and the
@@ -48,7 +49,7 @@ DERIVED = {
     "hit_quick": ("hit", 0.0, 0.6, False),
     "death_fall": ("death", 1.3, 3.5, False),
 }
-LOOPS |= {"strafe_right"}
+LOOPS |= {"strafe_right", "sword_walk_back"}
 
 
 def args():
