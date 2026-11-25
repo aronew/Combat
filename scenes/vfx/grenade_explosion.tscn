@@ -237,25 +237,25 @@ color_ramp = SubResource("GradientTexture1D_nrh8x")
 [sub_resource type="QuadMesh" id="QuadMesh_6bbdf"]
 size = Vector2(0.9, 0.9)
 
-[node name="GrenadeExplosion" type="Node3D" unique_id=657386883]
+[node name="GrenadeExplosion" type="Node3D" unique_id=435151941]
 script = ExtResource("1_rygiq")
 duration = 2.2
 profile = ExtResource("2_d68ty")
 
-[node name="CoreFlash" type="MeshInstance3D" parent="." unique_id=1417374359]
+[node name="CoreFlash" type="MeshInstance3D" parent="." unique_id=2048396739]
 material_override = SubResource("ShaderMaterial_aekrx")
 cast_shadow = 0
 mesh = SubResource("QuadMesh_045oe")
 metadata/keep_color = true
 
-[node name="Pulse" type="Node" parent="CoreFlash" unique_id=1996357458]
+[node name="Pulse" type="Node" parent="CoreFlash" unique_id=186077333]
 script = ExtResource("4_ifhj4")
 life = 0.09
 scale_from = Vector3(0.6, 0.6, 0.6)
 scale_to = Vector3(1.3, 1.3, 1.3)
 ease_power = 1.6
 
-[node name="Fireball" type="GPUParticles3D" parent="." unique_id=254381373]
+[node name="Fireball" type="GPUParticles3D" parent="." unique_id=1339243167]
 material_override = SubResource("ShaderMaterial_orgu6")
 cast_shadow = 0
 emitting = false
@@ -269,7 +269,7 @@ process_material = SubResource("ParticleProcessMaterial_voys4")
 draw_pass_1 = SubResource("QuadMesh_ucmk8")
 metadata/keep_color = true
 
-[node name="Smoke" type="GPUParticles3D" parent="." unique_id=1693194278]
+[node name="Smoke" type="GPUParticles3D" parent="." unique_id=482837811]
 material_override = SubResource("ShaderMaterial_vb7ih")
 cast_shadow = 0
 emitting = false
@@ -284,7 +284,7 @@ draw_pass_1 = SubResource("QuadMesh_v3mei")
 metadata/delay = 0.05
 metadata/keep_color = true
 
-[node name="Embers" type="GPUParticles3D" parent="." unique_id=525654128]
+[node name="Embers" type="GPUParticles3D" parent="." unique_id=149684777]
 material_override = SubResource("ShaderMaterial_6prmf")
 cast_shadow = 0
 emitting = false
@@ -299,7 +299,7 @@ process_material = SubResource("ParticleProcessMaterial_nwuqw")
 draw_pass_1 = SubResource("QuadMesh_kpply")
 metadata/keep_color = true
 
-[node name="Debris" type="GPUParticles3D" parent="." unique_id=1682065706]
+[node name="Debris" type="GPUParticles3D" parent="." unique_id=1055524121]
 material_override = SubResource("StandardMaterial3D_qlw66")
 cast_shadow = 0
 emitting = false
@@ -313,19 +313,19 @@ process_material = SubResource("ParticleProcessMaterial_40aao")
 draw_pass_1 = SubResource("BoxMesh_tr5dp")
 metadata/keep_color = true
 
-[node name="Shockwave" type="MeshInstance3D" parent="." unique_id=768445920]
+[node name="Shockwave" type="MeshInstance3D" parent="." unique_id=1583329203]
 material_override = SubResource("ShaderMaterial_vjfpk")
 cast_shadow = 0
 mesh = SubResource("PlaneMesh_bubwq")
 metadata/ground = true
 
-[node name="Pulse" type="Node" parent="Shockwave" unique_id=360737768]
+[node name="Pulse" type="Node" parent="Shockwave" unique_id=1762209280]
 script = ExtResource("4_ifhj4")
 life = 0.32
 scale_to = Vector3(9, 1, 9)
 ease_power = 2.2
 
-[node name="DustSkirt" type="GPUParticles3D" parent="." unique_id=370584424]
+[node name="DustSkirt" type="GPUParticles3D" parent="." unique_id=278230206]
 material_override = SubResource("ShaderMaterial_cxtj3")
 cast_shadow = 0
 emitting = false
@@ -339,13 +339,14 @@ draw_pass_1 = SubResource("QuadMesh_6bbdf")
 metadata/keep_color = true
 metadata/ground = true
 
-[node name="Light" type="OmniLight3D" parent="." unique_id=1248405721]
+[node name="Light" type="OmniLight3D" parent="." unique_id=794221579]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0)
 light_color = Color(1, 0.6, 0.25, 1)
 light_energy = 0.0
+light_volumetric_fog_energy = 0.0
 omni_range = 11.0
 
-[node name="Pulse" type="Node" parent="Light" unique_id=1553782355]
+[node name="Pulse" type="Node" parent="Light" unique_id=1994767503]
 script = ExtResource("4_ifhj4")
 life = 0.4
 ease_power = 1.0

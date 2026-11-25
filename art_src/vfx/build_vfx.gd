@@ -183,6 +183,9 @@ func _light(parent: Node3D, name: String, color: Color, energy: float, range_m: 
 	l.omni_range = range_m
 	l.light_energy = 0.0
 	l.shadow_enabled = false
+	# Kept out of volumetric fog: brief bright lights inside the froxel fog are expensive
+	# and have been linked to a GPU dropping out on HIGH quality.
+	l.light_volumetric_fog_energy = 0.0
 	parent.add_child(l)
 	l.position = pos
 	_add_pulse(l, {"life": life, "light_energy": energy, "ease_power": 1.0})

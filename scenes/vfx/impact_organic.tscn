@@ -146,23 +146,23 @@ scale_max = 1.3
 [sub_resource type="BoxMesh" id="BoxMesh_lfiyd"]
 size = Vector3(0.06, 0.03, 0.08)
 
-[node name="ImpactOrganic" type="Node3D" unique_id=623564868]
+[node name="ImpactOrganic" type="Node3D" unique_id=1317309732]
 script = ExtResource("1_jtdph")
 duration = 0.7
 profile = ExtResource("2_y0j5c")
 
-[node name="Wound" type="MeshInstance3D" parent="." unique_id=755368233]
+[node name="Wound" type="MeshInstance3D" parent="." unique_id=1185876879]
 material_override = SubResource("ShaderMaterial_xvbhf")
 cast_shadow = 0
 mesh = SubResource("QuadMesh_y5chq")
 
-[node name="Pulse" type="Node" parent="Wound" unique_id=2035587380]
+[node name="Pulse" type="Node" parent="Wound" unique_id=1448298108]
 script = ExtResource("4_cj3gh")
 life = 0.06
 scale_to = Vector3(0.4, 0.4, 0.4)
 ease_power = 1.5
 
-[node name="Ichor" type="GPUParticles3D" parent="." unique_id=2024743298]
+[node name="Ichor" type="GPUParticles3D" parent="." unique_id=605171770]
 material_override = SubResource("ShaderMaterial_kc7b0")
 cast_shadow = 0
 emitting = false
@@ -175,7 +175,7 @@ visibility_aabb = AABB(-8, -4, -8, 16, 14, 16)
 process_material = SubResource("ParticleProcessMaterial_stm65")
 draw_pass_1 = SubResource("QuadMesh_lwvfj")
 
-[node name="ExitSpray" type="GPUParticles3D" parent="." unique_id=456990194]
+[node name="ExitSpray" type="GPUParticles3D" parent="." unique_id=1546017693]
 material_override = SubResource("ShaderMaterial_kc7b0")
 cast_shadow = 0
 emitting = false
@@ -188,7 +188,7 @@ visibility_aabb = AABB(-8, -4, -8, 16, 14, 16)
 process_material = SubResource("ParticleProcessMaterial_snfx2")
 draw_pass_1 = SubResource("QuadMesh_krmvp")
 
-[node name="Mist" type="GPUParticles3D" parent="." unique_id=1156826309]
+[node name="Mist" type="GPUParticles3D" parent="." unique_id=1795717166]
 material_override = SubResource("ShaderMaterial_w5h1c")
 cast_shadow = 0
 emitting = false
@@ -201,7 +201,7 @@ visibility_aabb = AABB(-8, -4, -8, 16, 14, 16)
 process_material = SubResource("ParticleProcessMaterial_v4y5x")
 draw_pass_1 = SubResource("QuadMesh_y3jee")
 
-[node name="Bits" type="GPUParticles3D" parent="." unique_id=283552863]
+[node name="Bits" type="GPUParticles3D" parent="." unique_id=270320416]
 material_override = SubResource("StandardMaterial3D_c8ip5")
 cast_shadow = 0
 emitting = false

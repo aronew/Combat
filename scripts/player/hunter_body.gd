@@ -470,4 +470,5 @@ func _add_rim_light() -> void:
 	l.light_energy = rim_light_energy
 	l.omni_range = 3.2
 	l.shadow_enabled = false
+	l.light_volumetric_fog_energy = 0.0  # a moving light in the volumetric fog is costly
 	add_child(l)
