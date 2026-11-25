@@ -1,3 +1,4 @@
+@tool
 extends Node3D
 ## Look test 2: an ore-processing hall cut into the rock of the Smile Mine. Judges the enclosed
 ## look (rock on every side, beams overhead), the cutaway (whatever stands between the camera and
@@ -28,7 +29,8 @@ var _steel: ShaderMaterial
 
 
 func _enter_tree() -> void:
-	Game.reset_run()
+	if not Engine.is_editor_hint():
+		Game.reset_run()
 
 
 func _ready() -> void:
@@ -44,6 +46,10 @@ func _ready() -> void:
 	_build_middle()
 	_build_overhead()
 	_build_lights()
+	# the hall is built in the editor too (tool script), so it can be looked at without playing;
+	# nothing built here is saved into the scene file
+	if Engine.is_editor_hint():
+		return
 	if Game.camera_rig:
 		Game.camera_rig.distance = camera_distance
 		Game.camera_rig.pitch_degrees = camera_pitch
@@ -54,7 +60,8 @@ func _ready() -> void:
 
 
 func _process(_delta: float) -> void:
-	_update_cutaway()
+	if not Engine.is_editor_hint():
+		_update_cutaway()
 
 
 ## Tell the cutaway shader where the player is and which way the camera looks at her.
@@ -149,12 +156,9 @@ func _build_ore_line() -> void:
 	# conveyor runs east -> west, the crusher at the west end takes it in its hopper
 	_place_env("conveyor", Vector3(-3.6, 0, -6.5), 0.0, Vector3.ONE * 1.05)
 	_place_env("conveyor", Vector3(4.6, 0, -6.5), 0.0, Vector3.ONE * 1.05)
-	_collide_box(Vector3(16.8, 2.2, 2.6), Vector3(0.5, 1.1, -6.5))
 	_place_env("ore_crusher", Vector3(-11.8, 0, -6.6), PI, Vector3.ONE * 1.35)
-	_collide_box(Vector3(7.6, 4, 2.8), Vector3(-11.8, 2, -6.6))
 	# ore spilled at the crusher's mouth
 	_place_env("rock_cluster", Vector3(-15.2, 0, -3.6), 2.0, Vector3.ONE * 0.75)
-	_collide_box(Vector3(2.2, 1.4, 2.2), Vector3(-15.2, 0.7, -3.6))
 
 
 # --------------------------------------------------------------------------
@@ -198,8 +202,6 @@ func _build_breach() -> void:
 	_place_env("corruption_mound", Vector3(10.8, 0, 7.4), 0.4, Vector3.ONE * 1.15)
 	_place_env("corruption_mound", Vector3(15.6, 0, 6.9), 2.1, Vector3.ONE * 0.75)
 	_place_env("corruption_mound", Vector3(6.4, 0, 8.0), 4.0, Vector3.ONE * 0.6)
-	_collide_box(Vector3(4, 2, 3), Vector3(13.2, 1, 8.8))
-	_collide_box(Vector3(2.6, 1.5, 2.2), Vector3(8.4, 0.75, 9.8))
 	_collide_cyl(1.4, 2.0, Vector3(10.8, 0, 7.4))
 	_collide_cyl(0.9, 1.5, Vector3(15.6, 0, 6.9))
 
@@ -217,7 +219,6 @@ func _build_middle() -> void:
 	_place("cargo_stack", Vector3(-1.0, 0, 8.6), PI * 0.1)
 	_collide_box(Vector3(2.4, 1.8, 2.2), Vector3(-1.0, 0.9, 8.6))
 	_place_env("rock_cluster", Vector3(-9.5, 0, 9.0), 4.1, Vector3.ONE * 0.8)
-	_collide_box(Vector3(2.2, 1.4, 2.2), Vector3(-9.5, 0.7, 9.0))
 
 
 # --------------------------------------------------------------------------
@@ -226,18 +227,22 @@ func _build_middle() -> void:
 
 func _build_overhead() -> void:
 	var dark := _surface("metal_plate", Color(0.22, 0.21, 0.24), 0.5)
+	dark.set_shader_parameter("overhead", true)
+	var rail := _surface("metal_plate", Color(0.32, 0.31, 0.34), 0.5)
+	rail.set_shader_parameter("overhead", true)
 	for z in [-9.0, -2.5, 4.0]:
 		_mesh_box(Vector3(34, 0.7, 0.6), Vector3(-1, 6.8, z), dark)
 	for x in [-12.0, -4.0, 4.0, 12.0]:
 		_mesh_box(Vector3(0.6, 0.6, 24), Vector3(x, 7.4, -1), dark)
 	# crane rail over the ore line, the trolley parked above the crusher with its hook down
-	_mesh_box(Vector3(30, 0.5, 0.9), Vector3(-2, 6.2, -6.5), _steel)
-	_mesh_box(Vector3(1.6, 0.9, 1.6), Vector3(-8.5, 5.6, -6.5), _steel)
+	_mesh_box(Vector3(30, 0.5, 0.9), Vector3(-2, 6.2, -6.5), rail)
+	_mesh_box(Vector3(1.6, 0.9, 1.6), Vector3(-8.5, 5.6, -6.5), rail)
 	_mesh_box(Vector3(0.08, 2.6, 0.08), Vector3(-8.5, 3.9, -6.5), dark)
-	_mesh_box(Vector3(0.7, 0.5, 0.5), Vector3(-8.5, 2.5, -6.5), _steel)
-	# support columns where the girders meet the rock
+	_mesh_box(Vector3(0.7, 0.5, 0.5), Vector3(-8.5, 2.5, -6.5), rail)
+	# support columns where the girders meet the rock (cut like walls, not hidden like beams)
+	var column := _surface("metal_plate", Color(0.22, 0.21, 0.24), 0.5)
 	for p in [Vector3(-12, 0, -11.4), Vector3(-4, 0, -11.4), Vector3(4, 0, -11.4), Vector3(-15.8, 0, -2.5), Vector3(-15.8, 0, 4.0)]:
-		_mesh_box(Vector3(0.7, 7.2, 0.7), p + Vector3(0, 3.6, 0), dark)
+		_mesh_box(Vector3(0.7, 7.2, 0.7), p + Vector3(0, 3.6, 0), column)
 
 
 func _build_lights() -> void:
@@ -349,8 +354,31 @@ func _place(piece: String, pos: Vector3, yaw: float, low := false) -> Node3D:
 	return _instance(KIT % piece, pos, yaw, Vector3.ONE, low)
 
 
+## An AI-made prop. Rocks and machines collide by their own shape (a convex hull); the corruption
+## mounds get a cylinder for their core instead, so the hunter can walk over the goo around it.
 func _place_env(piece: String, pos: Vector3, yaw: float, scale := Vector3.ONE) -> Node3D:
-	return _instance(ENV % piece, pos, yaw, scale, false)
+	var n := _instance(ENV % piece, pos, yaw, scale, false)
+	if piece != "corruption_mound":
+		_collide_hull(n)
+	return n
+
+
+## A convex collider from the model's own vertices, scaled and turned as placed.
+func _collide_hull(n: Node3D) -> void:
+	for mi in n.find_children("*", "MeshInstance3D", true, false):
+		var m := mi as MeshInstance3D
+		var xf := n.transform * (m.transform if m.get_parent() == n else n.global_transform.affine_inverse() * m.global_transform)
+		var pts := PackedVector3Array()
+		for s in m.mesh.get_surface_count():
+			var verts: PackedVector3Array = m.mesh.surface_get_arrays(s)[Mesh.ARRAY_VERTEX]
+			for i in range(0, verts.size(), 6):
+				pts.append(xf.basis * verts[i])
+		var shape := ConvexPolygonShape3D.new()
+		shape.points = pts
+		var cs := CollisionShape3D.new()
+		cs.shape = shape
+		cs.position = xf.origin
+		_solid.add_child(cs)
 
 
 func _instance(path: String, pos: Vector3, yaw: float, scale: Vector3, low: bool) -> Node3D:
