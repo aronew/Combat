@@ -23,6 +23,18 @@ var _batches := {}
 var rail_top_mat: Material
 ## Paint yellow edge lines just inside room railings.
 var edge_lines := true
+## Look of the floor and the platform edges, set per floor theme (see ComplexGen THEMES):
+## floor_pattern 0 steel plates, 1 hex tiles, 2 flagstones; skirt "metal" (a thick fascia band
+## with lit trim) or "rock" (ragged stone blocks dropping into the void); overgrowth 0..1
+## (magenta foliage at the edges and corners, vines hanging into the void, moss on the floor).
+var floor_pattern := 0
+var skirt := "metal"
+var overgrowth := 0.0
+## Colour of the light strips set into metal fascias.
+var strip_color := Color("ffae45")
+var _rng := RandomNumberGenerator.new()
+## Meshes for batch kinds other than box and pipe (leaf clusters...).
+var _custom_meshes := {}
 
 # Tunables (copied from the Level's exports before building).
 var deck_thickness := 1.0
@@ -86,6 +98,43 @@ func make_materials(hive_center: Vector3, hive_radius: float, tile_size: float) 
 	mats.pipe_dark = std(Color("3b4147"), 0.6, 0.5)
 	mats.truss = std(Color("1c2226"), 0.6, 0.55)
 	mats.abyss_glow = std(Color(0.0, 0.05, 0.06), 0.0, 0.4, Color("2fd8e8"), 1.6)
+	# Platform edges.
+	mats.fascia = std(Color("23292e"), 0.6, 0.5)
+	mats.fascia_dark = std(Color("12161a"), 0.5, 0.6)
+	mats.curb = std(Color("3a4148"), 0.6, 0.45)
+	mats.edge_strip = std(Color("201a10"), 0.0, 0.5, strip_color, 4.5)
+	mats.stone = std(Color("55574f"), 0.0, 0.9)
+	mats.stone_dark = std(Color("3a3c3a"), 0.0, 0.92)
+	mats.stone_moss = std(Color("45522f"), 0.0, 0.95)
+	# Overgrowth: magenta leaves that catch a little light through them, dark vines.
+	var leaf := StandardMaterial3D.new()
+	leaf.albedo_color = Color("b0205a")
+	leaf.vertex_color_use_as_albedo = true
+	leaf.roughness = 0.6
+	leaf.cull_mode = BaseMaterial3D.CULL_DISABLED
+	leaf.backlight_enabled = true
+	leaf.backlight = Color(0.55, 0.05, 0.22)
+	leaf.emission_enabled = true
+	leaf.emission = Color(0.4, 0.02, 0.16)
+	leaf.emission_energy_multiplier = 0.35
+	mats.leaf = leaf
+	var leaf_dark: StandardMaterial3D = leaf.duplicate()
+	leaf_dark.albedo_color = Color("7a1440")
+	mats.leaf_dark = leaf_dark
+	mats.vine = std(Color("3a1424"), 0.0, 0.8)
+	mats.vine_green = std(Color("1f2e14"), 0.0, 0.85)
+	floor_mat.set_shader_parameter("pattern", floor_pattern)
+	floor_mat.set_shader_parameter("moss_amount", clampf(overgrowth * 0.42, 0.0, 0.45))
+	if floor_pattern == 1:
+		floor_mat.set_shader_parameter("cell_size", 1.6)
+		floor_mat.set_shader_parameter("cell_glow_amount", 0.035)
+		floor_mat.set_shader_parameter("base_color", Color(0.25, 0.27, 0.27))
+	elif floor_pattern == 2:
+		floor_mat.set_shader_parameter("cell_size", 1.75)
+		floor_mat.set_shader_parameter("base_color", Color(0.4, 0.39, 0.35))
+		floor_mat.set_shader_parameter("seam_color", Color(0.12, 0.12, 0.1))
+		floor_mat.set_shader_parameter("wetness", 0.3)
+	_rng.seed = 7171
 
 
 func std(albedo: Color, metallic: float, roughness: float, emission := Color.BLACK, emission_energy := 0.0) -> StandardMaterial3D:
@@ -172,7 +221,7 @@ func flush_batches() -> void:
 		var b: Dictionary = _batches[key]
 		var mm := MultiMesh.new()
 		mm.transform_format = MultiMesh.TRANSFORM_3D
-		mm.mesh = unit_box if b.kind == "box" else unit_pipe
+		mm.mesh = unit_box if b.kind == "box" else (unit_pipe if b.kind == "pipe" else _custom_meshes[b.kind])
 		mm.instance_count = b.xforms.size()
 		for i in b.xforms.size():
 			mm.set_instance_transform(i, b.xforms[i])
@@ -365,7 +414,7 @@ func bridge(r: Rect2, along_x: bool, solid := false) -> void:
 ## Straight railing: posts, rails, kick plate, collision, optional lamps and a
 ## void edge that bugs can leap over.
 func rail_run(a: Vector3, b: Vector3, inward: Vector3, lamp_color := Color("ffae45"), lamps := true,
-		spawn_edge := false, from_shaft := false, rail_mat: Material = null) -> void:
+		spawn_edge := false, from_shaft := false, rail_mat: Material = null, heavy_edge := true) -> void:
 	var d := b - a
 	var length := d.length()
 	if length < 0.3:
@@ -378,7 +427,13 @@ func rail_run(a: Vector3, b: Vector3, inward: Vector3, lamp_color := Color("ffae
 	var rb := Basis(Vector3.UP, rot)
 	batch_box(Vector3(length, 0.09, 0.09), mid + Vector3(0, rail_height, 0), top_m, rb)
 	batch_box(Vector3(length, 0.05, 0.05), mid + Vector3(0, rail_height * 0.55, 0), rm, rb, false)
-	batch_box(Vector3(length, 0.2, 0.05), mid + Vector3(0, 0.1, 0), mats.rail_dark, rb, false)
+	if heavy_edge:
+		# A chunky curb the railing stands on, so the platform edge reads as a solid lip.
+		batch_box(Vector3(length, 0.22, 0.34), mid + Vector3(0, 0.11, 0) - inward * 0.05, mats.curb, rb)
+		batch_box(Vector3(length, 0.05, 0.38), mid + Vector3(0, 0.235, 0) - inward * 0.05, mats.rail_dark, rb, false)
+		edge(a, b, inward)
+	else:
+		batch_box(Vector3(length, 0.2, 0.05), mid + Vector3(0, 0.1, 0), mats.rail_dark, rb, false)
 	var posts := maxi(1, ceili(length / rail_post_spacing))
 	for i in posts + 1:
 		var p := a + dir * (length * i / posts)
@@ -853,3 +908,158 @@ func smoke(pos: Vector3) -> void:
 	gp.visibility_aabb = AABB(Vector3(-6, -1, -6), Vector3(12, 14, 12))
 	gp.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	root.add_child(gp)
+
+
+# --------------------------------------------------------------------------
+# Platform edges and overgrowth (after the reference location art)
+# --------------------------------------------------------------------------
+
+## The outside of a platform along a void edge from a to b (inward points onto the deck).
+## Metal: a thick fascia band below the deck with a stepped underside and lit strips.
+## Rock: a ragged row of stone blocks dropping into the void, tops broken at the edge.
+func edge(a: Vector3, b: Vector3, inward: Vector3) -> void:
+	var d := b - a
+	var length := d.length()
+	if length < 0.4:
+		return
+	var dir := d / length
+	var out := -inward
+	var rb := Basis(Vector3.UP, atan2(-dir.z, dir.x))
+	if skirt == "rock":
+		_rock_edge(a, dir, out, length, rb)
+	else:
+		_metal_edge(a, dir, out, length, rb)
+	if overgrowth > 0.0:
+		_edge_growth(a, dir, out, inward, length)
+
+
+func _metal_edge(a: Vector3, dir: Vector3, out: Vector3, length: float, rb: Basis) -> void:
+	var mid := a + dir * length * 0.5
+	# main band, flush with the deck top, and a recessed, darker underside below it
+	batch_box(Vector3(length + 0.5, 2.0, 0.4), mid + out * 0.18 + Vector3(0, -1.02, 0), mats.fascia, rb, false)
+	batch_box(Vector3(length + 0.3, 0.12, 0.5), mid + out * 0.2 + Vector3(0, -0.06, 0), mats.curb, rb, false)
+	batch_box(Vector3(length, 1.4, 0.3), mid + out * 0.02 + Vector3(0, -2.7, 0), mats.fascia_dark, rb, false)
+	# lit strips set into the band, like running lights on a hull
+	var n := maxi(1, int(length / 4.2))
+	for i in n:
+		var p := a + dir * (length * (i + 0.5) / n) + out * 0.39
+		batch_box(Vector3(1.5, 0.1, 0.04), p + Vector3(0, -0.75, 0), mats.edge_strip, rb, false)
+	# ribs every few metres
+	var ribs := maxi(1, int(length / 3.0))
+	for i in ribs + 1:
+		var p := a + dir * (length * i / ribs) + out * 0.42
+		batch_box(Vector3(0.22, 2.2, 0.14), p + Vector3(0, -1.2, 0), mats.fascia_dark, rb, false)
+
+
+func _rock_edge(a: Vector3, dir: Vector3, out: Vector3, length: float, rb: Basis) -> void:
+	var s := 0.0
+	while s < length:
+		var w := _rng.randf_range(0.9, 1.6)
+		var h := _rng.randf_range(1.8, 4.6)
+		var dp := _rng.randf_range(0.9, 1.5)
+		var top := -0.05 - _rng.randf_range(0.0, 0.22)
+		var push := _rng.randf_range(0.05, 0.5)
+		var p := a + dir * minf(s + w * 0.5, length) + out * (dp * 0.5 - 0.3 + push) + Vector3(0, top - h * 0.5, 0)
+		var tilt := Basis(dir, _rng.randf_range(-0.06, 0.06)) * Basis(Vector3.UP, _rng.randf_range(-0.12, 0.12))
+		var m: Material = mats.stone_moss if _rng.randf() < 0.25 + overgrowth * 0.35 else (mats.stone if _rng.randf() < 0.6 else mats.stone_dark)
+		batch_box(Vector3(w, h, dp), p, m, tilt * rb, false)
+		# now and then a lower block juts out, so the cliff steps down
+		if _rng.randf() < 0.35:
+			var h2 := _rng.randf_range(1.5, 3.0)
+			batch_box(Vector3(w * 0.9, h2, dp * 0.8), p + out * (dp * 0.45) + Vector3(0, -h * 0.5 - h2 * 0.3, 0), mats.stone_dark, tilt * rb, false)
+		s += w * _rng.randf_range(0.82, 0.98)
+
+
+## Leaves along the edge and vines over it, thicker with more overgrowth.
+func _edge_growth(a: Vector3, dir: Vector3, out: Vector3, inward: Vector3, length: float) -> void:
+	var s := _rng.randf_range(0.0, 3.0)
+	while s < length:
+		var p := a + dir * s
+		if _rng.randf() < overgrowth * 0.7:
+			# a clump hugging the outside of the edge, spilling over the lip
+			foliage(p + out * _rng.randf_range(0.15, 0.45) + Vector3(0, _rng.randf_range(-0.35, 0.05), 0), _rng.randf_range(1.0, 1.9))
+		if _rng.randf() < overgrowth * 0.45:
+			vine(p + out * 0.42 + Vector3(0, -0.1, 0), out, _rng.randf_range(1.5, 4.5))
+		s += _rng.randf_range(1.6, 3.6)
+
+
+## A clump of broad magenta leaves at pos.
+func foliage(pos: Vector3, size := 1.0, dark := false) -> void:
+	if not _custom_meshes.has("leaves"):
+		_custom_meshes["leaves"] = _leaf_cluster_mesh()
+	var basis := Basis(Vector3.UP, _rng.randf_range(0.0, TAU)).scaled(Vector3.ONE * size)
+	_batch("leaves", Transform3D(basis, pos), mats.leaf_dark if dark or _rng.randf() < 0.3 else mats.leaf, false)
+
+
+## A vine hanging from `top`, swaying out from the wall a little, with a few leaves on it.
+func vine(top: Vector3, out: Vector3, length: float) -> void:
+	var seg := 0.5
+	var n := int(length / seg)
+	var p := top
+	var phase := _rng.randf_range(0.0, TAU)
+	var m: Material = mats.vine if _rng.randf() < 0.6 else mats.vine_green
+	for i in n:
+		var q := top + Vector3(0, -(i + 1) * seg, 0) + out * (0.08 + 0.12 * sin(phase + i * 0.7)) + Vector3(0.06 * cos(phase + i), 0, 0)
+		batch_pipe(p, q, 0.035, m)
+		if i % 3 == 1 and _rng.randf() < 0.6:
+			foliage(q + out * 0.08, _rng.randf_range(0.25, 0.4), true)
+		p = q
+
+
+## Corner and wall-foot planting for a room: clumps in the corners and along walled sides.
+func overgrow_room(r: Rect2, walls: Array) -> void:
+	if overgrowth <= 0.0:
+		return
+	var corners: Array[Vector3] = [Vector3(r.position.x, 0, r.position.y), Vector3(r.end.x, 0, r.position.y), Vector3(r.position.x, 0, r.end.y), Vector3(r.end.x, 0, r.end.y)]
+	for corner in corners:
+		if _rng.randf() < overgrowth * 0.8:
+			var inward: Vector3 = (Vector3(r.get_center().x, 0, r.get_center().y) - corner).normalized()
+			for k in _rng.randi_range(1, 3):
+				foliage(corner + inward * _rng.randf_range(0.5, 1.6) + Vector3(_rng.randf_range(-0.4, 0.4), 0.0, _rng.randf_range(-0.4, 0.4)), _rng.randf_range(1.1, 2.0))
+	for side in walls:
+		var a := Vector3(r.position.x, 0, r.position.y)
+		var b := Vector3(r.end.x, 0, r.position.y)
+		var inward := Vector3.BACK
+		if side == "w":
+			b = Vector3(r.position.x, 0, r.end.y)
+			inward = Vector3.RIGHT
+		var length := a.distance_to(b)
+		var s := _rng.randf_range(0.5, 3.0)
+		while s < length:
+			if _rng.randf() < overgrowth * 0.6:
+				foliage(a + (b - a).normalized() * s + inward * _rng.randf_range(0.4, 0.8), _rng.randf_range(1.2, 2.0))
+			s += _rng.randf_range(2.0, 4.5)
+
+
+## One clump: ~11 broad leaves radiating from the middle, pitched up, folded along the midrib.
+## Vertex colour darkens toward the stem.
+func _leaf_cluster_mesh() -> ArrayMesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 99
+	var count := 11
+	for i in count:
+		var yaw := TAU * i / count + rng.randf_range(-0.25, 0.25)
+		var pitch := rng.randf_range(0.25, 1.05)  # up from flat
+		var length := rng.randf_range(0.45, 0.8)
+		var width := length * rng.randf_range(0.32, 0.45)
+		var fwd := Vector3(cos(yaw) * cos(pitch), sin(pitch), sin(yaw) * cos(pitch))
+		var side := Vector3(-sin(yaw), 0, cos(yaw))
+		var up := side.cross(fwd).normalized()
+		var base := Vector3(0, 0.05, 0) + fwd * 0.05
+		var tip := base + fwd * length - Vector3(0, length * 0.25, 0)  # the tip droops
+		var midp := base + fwd * length * 0.45
+		var fold := up * width * 0.18
+		var l := midp + side * width * 0.5 - fold
+		var r := midp - side * width * 0.5 - fold
+		var rib := midp + fold * 0.5
+		var dark := Color(0.35, 0.35, 0.35)
+		var lightc := Color(1.0, 1.0, 1.0)
+		for tri in [[base, l, rib], [rib, l, tip], [base, rib, r], [rib, tip, r]]:
+			for v in tri:
+				var t := clampf(v.distance_to(base) / length, 0.0, 1.0)
+				st.set_color(dark.lerp(lightc, t))
+				st.add_vertex(v)
+	st.generate_normals()
+	return st.commit()

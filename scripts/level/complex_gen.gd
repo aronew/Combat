@@ -18,18 +18,27 @@ const CELL := 36.0
 ## Minimum gap between a room and its cell edge, so bridges are at least 2x this long.
 const MARGIN := 2.5
 
+## Look per theme (after the reference location art): "floor" 0 steel plates, 1 hex tiles,
+## 2 flagstones; "skirt" is the platform edge, "metal" (thick fascia with lit strips in
+## "strip" colour) or "rock" (stone blocks dropping into the void); "overgrowth" 0..1 is how
+## much magenta foliage, vine and moss has taken the place.
 const THEMES := [
 	{"name": "Upper Decks", "lamp": Color("ffc178"), "alt": Color("ffe3b8"), "red_rails": true,
-		"kinds": {"plain": 5, "block": 2, "split": 1, "hole": 2}, "interior": 0.35},
+		"kinds": {"plain": 5, "block": 2, "split": 1, "hole": 2}, "interior": 0.35,
+		"floor": 1, "skirt": "metal", "strip": Color("ff3a2e"), "overgrowth": 0.55},
 	{"name": "Switchgear Halls", "lamp": Color("9cc4ff"), "alt": Color("ffd9a8"),
-		"kinds": {"plain": 2, "block": 5, "split": 2, "hole": 1}, "interior": 0.6},
+		"kinds": {"plain": 2, "block": 5, "split": 2, "hole": 1}, "interior": 0.6,
+		"floor": 0, "skirt": "metal", "strip": Color("7fb2ff"), "overgrowth": 0.2},
 	{"name": "Pump Works", "lamp": Color("ffd9a8"), "alt": Color("8fe8ff"), "red_rails": true,
-		"kinds": {"plain": 3, "block": 2, "split": 3, "hole": 3}, "interior": 0.3},
+		"kinds": {"plain": 3, "block": 2, "split": 3, "hole": 3}, "interior": 0.3,
+		"floor": 2, "skirt": "rock", "strip": Color("ffae45"), "overgrowth": 0.7},
 	{"name": "Hive Foundry", "lamp": Color("ffe2b0"), "alt": Color("c8ff8a"),
-		"kinds": {"plain": 3, "block": 2, "split": 2, "hole": 3}, "interior": 0.45},
+		"kinds": {"plain": 3, "block": 2, "split": 2, "hole": 3}, "interior": 0.45,
+		"floor": 2, "skirt": "rock", "strip": Color("ffae45"), "overgrowth": 1.0},
 ]
 const FINAL_THEME := {"name": "Reactor Core", "lamp": Color("ffb35c"), "alt": Color("e8eef5"), "red_rails": true,
-	"kinds": {"plain": 3, "block": 3, "split": 2, "hole": 2}, "interior": 0.3}
+	"kinds": {"plain": 3, "block": 3, "split": 2, "hole": 2}, "interior": 0.3,
+	"floor": 1, "skirt": "metal", "strip": Color("ffae45"), "overgrowth": 0.35}
 
 ## Starship floors (a derelict hauler): almost everything is inside the hull.
 const SHIP_THEMES := [
@@ -195,6 +204,8 @@ func generate(seed_: int, floor_idx: int, floors: int, depth: int, dest := "deep
 	_out = {
 		"name": theme.name, "final": final, "floor": floor_idx, "floors": floors, "lamp": theme.lamp,
 		"red_rails": theme.get("red_rails", false),
+		"floor_pattern": theme.get("floor", 0), "skirt": theme.get("skirt", "metal"),
+		"strip": theme.get("strip", Color("ffae45")), "overgrowth": theme.get("overgrowth", 0.0),
 		"barrels": [], "nests": [], "turrets": [], "breakers": [], "lasers": [], "doors": [],
 		"crates": [], "panels": [], "guides": [], "placements": [], "shaft_glows": [], "carcasses": [],
 		"props": [], "wall_lights": [], "guide_loops": [], "shaft_pipes": [],
