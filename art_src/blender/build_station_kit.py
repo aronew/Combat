@@ -20,6 +20,7 @@ import sys
 import bpy  # must come before bmesh when running as the bpy module
 import bmesh  # noqa: E402
 from mathutils import Matrix, Vector
+from mathutils.bvhtree import BVHTree
 
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 OUT = os.path.join(REPO, "assets", "models", "kit")
@@ -66,6 +67,41 @@ def make_materials():
             bsdf.inputs["Emission Strength"].default_value = strength
         mats[name] = m
     return mats
+
+
+def bake_wear(bm, rays=24, reach=0.7):
+    """Per vertex: ambient occlusion from short rays over the normal's hemisphere, and how
+    sharp an outward edge it sits on. Returns [(ao, edge)] in vertex order."""
+    bm.verts.ensure_lookup_table()
+    tree = BVHTree.FromBMesh(bm)
+    # fixed, evenly spread hemisphere directions (golden spiral), shared by every vertex
+    dirs = []
+    for i in range(rays):
+        z = 1.0 - (i + 0.5) / rays
+        r = math.sqrt(max(0.0, 1.0 - z * z))
+        a = i * 2.39996
+        dirs.append(Vector((math.cos(a) * r, math.sin(a) * r, z)))
+    out = []
+    for v in bm.verts:
+        n = v.normal
+        if n.length < 0.5:
+            out.append((1.0, 0.0))
+            continue
+        basis = n.to_track_quat("Z", "Y").to_matrix()
+        hit = 0
+        for d in dirs:
+            w = basis @ d
+            if tree.ray_cast(v.co + n * 0.004, w, reach)[0] is not None:
+                hit += 1
+        ao = 1.0 - (hit / rays) * 0.9
+        edge = 0.0
+        for e in v.link_edges:
+            if len(e.link_faces) == 2:
+                ang = e.calc_face_angle_signed(0.0)
+                if ang > 0.0:  # convex
+                    edge = max(edge, min(1.0, ang / 0.9))
+        out.append((ao, edge))
+    return out
 
 
 class Piece:
@@ -119,8 +155,15 @@ class Piece:
 
     def finish(self, mats):
         bmesh.ops.recalc_face_normals(self.bm, faces=self.bm.faces)
+        wear = bake_wear(self.bm)
         mesh = bpy.data.meshes.new(self.name)
         self.bm.to_mesh(mesh)
+        # vertex colours for the game's surface shader: R = ambient occlusion (dirt in the
+        # creases), G = edge wear (paint chipped off the outer edges), B = unused
+        col = mesh.color_attributes.new("Wear", "FLOAT_COLOR", "POINT")
+        for i, (ao, edge) in enumerate(wear):
+            col.data[i].color = (ao, edge, 0.0, 1.0)
+        mesh.color_attributes.active_color = col
         self.bm.free()
         for s in self.slots:
             mesh.materials.append(mats[s])
@@ -319,7 +362,7 @@ def export_glb(obj, path):
     bpy.ops.export_scene.gltf(
         filepath=path, export_format="GLB", use_selection=True, export_yup=True,
         export_apply=True, export_materials="EXPORT", export_animations=False,
-        export_cameras=False, export_lights=False)
+        export_cameras=False, export_lights=False, export_vertex_color="ACTIVE")
 
 
 def main():

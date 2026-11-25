@@ -12,3 +12,8 @@ commercial included, no attribution required. 1K JPG sets: `_albedo` (colour), `
 | hangar_concrete_floor | hangar_concrete_floor | worn concrete floors |
 | rock_wall_02 | rock_wall_02 | rock walls and cave faces |
 | painted_metal_shutter | painted_metal_shutter | doors, shutters |
+| large_floor_tiles_02 | large_floor_tiles_02 | light worn tile floors (the fighting floor) |
+| rusty_metal_02 | rusty_metal_02 | painted wall panels and hazard paint (desaturated, then tinted) |
+| rusty_painted_metal | rusty_painted_metal | cargo cases |
+
+The kit's flat colours are mapped to these sets in `scripts/level/station_look.gd`.

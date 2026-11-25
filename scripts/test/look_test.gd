@@ -24,6 +24,10 @@ func _enter_tree() -> void:
 	Game.reset_run()
 
 
+func _process(_delta: float) -> void:
+	StationLook.update_cutaway(get_viewport())
+
+
 func _ready() -> void:
 	_solid = StaticBody3D.new()
 	_solid.collision_layer = 1
@@ -141,15 +145,21 @@ func _build_void() -> void:
 
 
 func _build_lights() -> void:
-	# magenta-pink from each pillar, a white wash overhead, amber at the doors, cold window light
+	# magenta-pink from each pillar and the doors, cold window light
 	for p in [Vector3(-5, 2.2, -3.5), Vector3(5, 2.2, -3.5), Vector3(-5, 2.2, 3.5), Vector3(5, 2.2, 3.5), Vector3(26, -0.8, 0)]:
 		_omni(p, Color(1.0, 0.45, 0.75), 1.0, 7.0)
-	for p in [Vector3(-6, 4.5, -2), Vector3(6, 4.5, -2), Vector3(0, 4.5, 6)]:
-		_omni(p, Color(0.85, 0.9, 1.0), 0.9, 12.0)
-	_omni(Vector3(10, 2.5, -8.6), Color(1.0, 0.6, 0.25), 1.4, 5.0)
-	_omni(Vector3(-10.8, 2.5, -4), Color(1.0, 0.6, 0.25), 1.4, 5.0)
+	# pools of pale pink light on the floor (the palette here: magenta key, cool blue accent)
+	for p in [Vector3(-7, 6.5, -2), Vector3(0, 6.5, 0), Vector3(7, 6.5, -2), Vector3(-3, 6.5, 6), Vector3(5, 6.5, 6)]:
+		_spot(p, Color(1.0, 0.8, 0.9), 4.5, 40.0)
+	_omni(Vector3(10, 2.5, -8.6), Color(1.0, 0.35, 0.7), 1.4, 5.0)
+	_omni(Vector3(-10.8, 2.5, -4), Color(1.0, 0.35, 0.7), 1.4, 5.0)
 	for x in [-6.0, -2.0, 2.0]:
 		_omni(Vector3(x, 3.0, -9.0), Color(0.45, 0.6, 1.0), 0.8, 6.0)
+	# red lamps at the feet of the north and west walls, washing light up them
+	for i in 6:
+		StationLook.wall_lamp(self, Vector3(-10.0 + i * 4.0, 0, -9.55), Color(1.0, 0.25, 0.2))
+	for i in 5:
+		StationLook.wall_lamp(self, Vector3(-11.55, 0, -8.0 + i * 4.0), Color(1.0, 0.25, 0.2))
 	# warm furnace glow rising out of the void past the rims
 	_omni(Vector3(4, -7, 16), Color(1.0, 0.42, 0.15), 6.0, 18.0)
 	_omni(Vector3(22, -9, 10), Color(1.0, 0.42, 0.15), 6.0, 18.0)
@@ -173,6 +183,7 @@ func _place(piece: String, pos: Vector3, yaw: float, scale := Vector3.ONE) -> No
 	n.rotation.y = yaw
 	n.scale = scale
 	add_child(n)
+	StationLook.apply(n)
 	if piece == "wall_window":
 		_glass(n)
 	return n
@@ -189,6 +200,20 @@ func _glass(n: Node) -> void:
 			var mat := m.mesh.surface_get_material(s)
 			if mat and mat.resource_name == "SpaceGlass":
 				m.set_surface_override_material(s, _space_glass)
+
+
+## A lamp pointing straight down: a pool of light on the floor.
+func _spot(pos: Vector3, color: Color, energy: float, angle: float) -> void:
+	var l := SpotLight3D.new()
+	l.position = pos
+	l.rotation_degrees = Vector3(-90, 0, 0)
+	l.light_color = color
+	l.light_energy = energy
+	l.spot_range = pos.y + 3.0
+	l.spot_angle = angle
+	l.spot_angle_attenuation = 0.8
+	l.shadow_enabled = true
+	add_child(l)
 
 
 func _omni(pos: Vector3, color: Color, energy: float, range_m: float) -> void:
