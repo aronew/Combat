@@ -262,7 +262,14 @@ func _ready() -> void:
 	muzzle_light.light_energy = 0.0
 	_ghost_mesh = ($Visual/Body as MeshInstance3D).mesh
 	if use_hunter:
-		body = HunterBody.new()
+		# Loaded by path so a hunter script that fails to compile on some platform falls back
+		# to the placeholder (with a message) instead of stopping the player's setup.
+		var hunter_script := load("res://scripts/player/hunter_body.gd") as Script
+		if hunter_script == null or not hunter_script.can_instantiate():
+			_show_hunter_failure("her script did not load (it failed to compile, or her model files did not import)")
+			use_hunter = false
+	if use_hunter:
+		body = load("res://scripts/player/hunter_body.gd").new()
 		body.name = "Hunter"
 		body.use_rim_pass = hunter_rim_pass
 		body.use_rim_light = hunter_rim_light
@@ -276,6 +283,7 @@ func _ready() -> void:
 					n.visible = false
 		else:
 			push_error("Player: the hunter body failed to set up; using the placeholder body")
+			_show_hunter_failure("setup stopped while %s" % body.stage)
 			body.queue_free()
 			body = null
 	_build_ghosts()
@@ -1320,3 +1328,20 @@ func _drive_hunter() -> void:
 	muzzle.global_position = tip
 	muzzle_flash.global_position = tip + aim_dir * 0.08
 	muzzle_light.global_position = tip + aim_dir * 0.2 + Vector3.UP * 0.1
+
+
+## On-screen note when the hunter can't be used (the web editor has no easy error console).
+func _show_hunter_failure(reason: String) -> void:
+	push_error("Player: hunter not loaded: " + reason)
+	var layer := CanvasLayer.new()
+	layer.layer = 90
+	var label := Label.new()
+	label.text = "HUNTER DIDN'T LOAD: %s.\nShowing the placeholder body. (Screenshot this for Claude.)" % reason
+	label.add_theme_font_size_override("font_size", 18)
+	label.add_theme_color_override("font_color", Color(1.0, 0.85, 0.3))
+	label.add_theme_constant_override("outline_size", 6)
+	label.add_theme_color_override("font_outline_color", Color.BLACK)
+	label.position = Vector2(24, 120)
+	layer.add_child(label)
+	add_child(layer)
+	get_tree().create_timer(15.0).timeout.connect(layer.queue_free)
