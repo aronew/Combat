@@ -41,6 +41,7 @@ func _ready() -> void:
 			_pulses.append(n)
 		if n is GeometryInstance3D:
 			var g := n as GeometryInstance3D
+			g.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF  # sparks and smoke never need shadows
 			# Own copies of the shader materials, so this effect's tint and
 			# animation never leak into other pooled effects.
 			if g.material_override is ShaderMaterial:

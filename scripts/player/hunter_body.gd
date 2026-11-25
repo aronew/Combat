@@ -105,6 +105,7 @@ func _ready() -> void:
 	_tune_materials(blade)
 	if use_rim_light:
 		_add_rim_light()
+	_use_shadow_proxy()
 	set_rifle_mode(true)
 	ok = skeleton != null and tree != null and rifle != null and blade != null
 
@@ -459,6 +460,28 @@ func _tune_materials(root: Node, rim := false) -> void:
 			mat.emission_energy_multiplier = glow_energy
 			mat.next_pass = rim_mat
 			mi.set_surface_override_material(i, mat)
+
+
+## Shadows come from a simple stand-in, not the 31k-triangle model: on HIGH every shadowed
+## lamp nearby re-renders shadow casters into six cube faces each frame, and the full model
+## (plus two detailed weapons) made that heavy enough to stall some GPUs.
+func _use_shadow_proxy() -> void:
+	for root in [_model, rifle, blade]:
+		if root == null:
+			continue
+		for m in root.find_children("*", "MeshInstance3D", true, false):
+			(m as MeshInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var proxy := MeshInstance3D.new()
+	proxy.name = "ShadowProxy"
+	var cap := CapsuleMesh.new()
+	cap.radius = 0.24
+	cap.height = 1.75 * body_scale
+	cap.radial_segments = 8
+	cap.rings = 2
+	proxy.mesh = cap
+	proxy.position = Vector3(0, cap.height * 0.5, 0)
+	proxy.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY
+	add_child(proxy)
 
 
 ## A soft light above and behind her so the dark chitin reads on dark floors.
