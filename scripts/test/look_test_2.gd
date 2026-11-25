@@ -15,15 +15,12 @@ extends Node3D
 
 const KIT := "res://assets/models/kit/%s.glb"
 const ENV := "res://assets/models/env/%s.glb"
-const TEX := "res://assets/textures/cc0/%s_%s.jpg"
-const CUTAWAY := preload("res://scripts/shaders/cutaway.gdshader")
 const HAZARD := preload("res://scripts/shaders/hazard_stripe.gdshader")
 
 @export var camera_distance := 13.5
 @export var camera_pitch := 48.0
 
 var _scenes := {}
-var _mats := {}  # source material -> cutaway material
 var _solid: StaticBody3D
 var _steel: ShaderMaterial
 
@@ -37,7 +34,7 @@ func _ready() -> void:
 	_solid = StaticBody3D.new()
 	_solid.collision_layer = 1
 	add_child(_solid)
-	_steel = _surface("metal_plate", Color(0.32, 0.31, 0.34), 0.5)
+	_steel = StationLook.surface("metal_plate", Color(0.32, 0.31, 0.34), 0.5)
 	_build_floor()
 	_build_rock()
 	_build_ore_line()
@@ -61,19 +58,7 @@ func _ready() -> void:
 
 func _process(_delta: float) -> void:
 	if not Engine.is_editor_hint():
-		_update_cutaway()
-
-
-## Tell the cutaway shader where the player is and which way the camera looks at her.
-func _update_cutaway() -> void:
-	var cam := get_viewport().get_camera_3d()
-	if Game.player == null or cam == null:
-		return
-	var p: Vector3 = Game.player.global_position
-	var v := cam.global_position - p
-	v.y = 0.0
-	RenderingServer.global_shader_parameter_set("cutaway_player", p)
-	RenderingServer.global_shader_parameter_set("cutaway_view", v.normalized())
+		StationLook.update_cutaway(get_viewport())
 
 
 # --------------------------------------------------------------------------
@@ -81,21 +66,27 @@ func _update_cutaway() -> void:
 # --------------------------------------------------------------------------
 
 func _build_floor() -> void:
-	var concrete := _surface("hangar_concrete_floor", Color(1.7, 1.65, 1.7), 0.5, 0.15)
+	# dark concrete out to the rock, light worn tiles where the fighting happens
+	var concrete := StationLook.surface("hangar_concrete_floor", Color(1.5, 1.42, 1.4), 0.5, 0.15, 0.0, 0.5)
 	concrete.set_shader_parameter("macro_var", 0.7)
 	concrete.set_shader_parameter("cut_enabled", false)
 	_plane(Vector2(38, 28), Vector3(0, 0, -1), concrete)
+	var tiles := StationLook.surface("large_floor_tiles_02", Color(1.3, 1.18, 1.06), 0.55, 0.25, 0.3, 0.55)
+	tiles.set_shader_parameter("macro_var", 0.45)
+	tiles.set_shader_parameter("cut_enabled", false)
+	_plane(Vector2(20, 12.5), Vector3(-4, 0.006, 3.0), tiles)
+	_stripe(Vector3(-4, 0.016, -3.35), Vector2(20, 0.2))
 	_collide_box(Vector3(40, 1, 32), Vector3(-1, -0.5, -1))
 
 	# the steel walkway from the exit door to the booth
-	var plate := _surface("metal_plate_02", Color(0.8, 0.8, 0.85), 0.5, 0.5)
+	var plate := StationLook.surface("metal_plate_02", Color(0.8, 0.8, 0.85), 0.5, 0.5)
 	plate.set_shader_parameter("macro_var", 0.4)
 	plate.set_shader_parameter("cut_enabled", false)
 	_plane(Vector2(3.2, 10), Vector3(8.4, 0.012, -0.2), plate)
 	_plane(Vector2(11, 3.2), Vector3(13.5, 0.011, 4), plate)
 
 	# grates along the ore line: the ore spill below glows through them
-	var grate := _surface("metal_grate_rusty", Color(0.9, 0.85, 0.85), 0.5, 0.7)
+	var grate := StationLook.surface("metal_grate_rusty", Color(0.9, 0.85, 0.85), 0.5, 0.7)
 	grate.set_shader_parameter("cut_enabled", false)
 	grate.set_shader_parameter("gap_glow", Vector3(1.6, 0.5, 0.12))
 	_plane(Vector2(16, 3.6), Vector3(-6, 0.014, -6.5), grate)
@@ -145,7 +136,7 @@ func _build_rock() -> void:
 func _rock(pos: Vector3, yaw: float, s: float, low: bool) -> void:
 	var r := _place_env("rock_wall", pos, yaw, Vector3(s, s * 1.15, s))
 	if low:
-		_always_cut(r)
+		StationLook.always_cut(r)
 
 
 # --------------------------------------------------------------------------
@@ -226,9 +217,9 @@ func _build_middle() -> void:
 # --------------------------------------------------------------------------
 
 func _build_overhead() -> void:
-	var dark := _surface("metal_plate", Color(0.22, 0.21, 0.24), 0.5)
+	var dark := StationLook.surface("metal_plate", Color(0.22, 0.21, 0.24), 0.5)
 	dark.set_shader_parameter("overhead", true)
-	var rail := _surface("metal_plate", Color(0.32, 0.31, 0.34), 0.5)
+	var rail := StationLook.surface("metal_plate", Color(0.32, 0.31, 0.34), 0.5)
 	rail.set_shader_parameter("overhead", true)
 	for z in [-9.0, -2.5, 4.0]:
 		_mesh_box(Vector3(34, 0.7, 0.6), Vector3(-1, 6.8, z), dark)
@@ -240,15 +231,19 @@ func _build_overhead() -> void:
 	_mesh_box(Vector3(0.08, 2.6, 0.08), Vector3(-8.5, 3.9, -6.5), dark)
 	_mesh_box(Vector3(0.7, 0.5, 0.5), Vector3(-8.5, 2.5, -6.5), rail)
 	# support columns where the girders meet the rock (cut like walls, not hidden like beams)
-	var column := _surface("metal_plate", Color(0.22, 0.21, 0.24), 0.5)
+	var column := StationLook.surface("metal_plate", Color(0.22, 0.21, 0.24), 0.5)
 	for p in [Vector3(-12, 0, -11.4), Vector3(-4, 0, -11.4), Vector3(4, 0, -11.4), Vector3(-15.8, 0, -2.5), Vector3(-15.8, 0, 4.0)]:
 		_mesh_box(Vector3(0.7, 7.2, 0.7), p + Vector3(0, 3.6, 0), column)
 
 
 func _build_lights() -> void:
-	# cold work lamps hanging from the girders
-	for p in [Vector3(-9, 5.6, -2.5), Vector3(-1, 5.6, -2.5), Vector3(7, 5.6, -2.5), Vector3(-5, 5.6, 4), Vector3(4, 5.6, 4)]:
-		_omni(p, Color(0.82, 0.88, 1.0), 1.6, 12.0)
+	# The palette here: warm ore-orange as the key, magenta as the accent. Warm lamps on the
+	# girders throw pools of light on the tiled floor, so the fighting floor is the brightest
+	# thing on screen and the rock around it falls off into the dark.
+	for p in [Vector3(-9, 6.4, 1.5), Vector3(-2, 6.4, 0.5), Vector3(-5, 6.4, 6.5), Vector3(4, 6.4, 5.5), Vector3(9, 6.4, -1.5)]:
+		_spot(p, Color(1.0, 0.74, 0.5), 5.0, 40.0)
+	for p in [Vector3(-9, 5.6, -2.5), Vector3(-1, 5.6, -2.5), Vector3(7, 5.6, -2.5)]:
+		_omni(p, Color(1.0, 0.7, 0.5), 0.6, 10.0)
 	# magenta pillars
 	for p in [Vector3(-6, 2.2, 2.5), Vector3(3, 2.2, 1.0)]:
 		_omni(p, Color(1.0, 0.45, 0.75), 1.0, 7.0)
@@ -258,92 +253,23 @@ func _build_lights() -> void:
 	_omni(Vector3(-14.5, 1.2, -3.8), Color(1.0, 0.45, 0.15), 1.4, 5.0)
 	# the booth's amber windows spill onto the walkway
 	_omni(Vector3(13, 2.0, -6.0), Color(1.0, 0.6, 0.25), 1.6, 6.5)
-	# the breach glows candy pink and teal
-	_omni(Vector3(11.5, 1.5, 7.4), Color(1.0, 0.35, 0.6), 2.0, 7.0)
-	_omni(Vector3(15.2, 0.8, 6.4), Color(0.2, 0.9, 0.85), 1.2, 4.5)
-	# cold daylight-ish from the exit door
-	_omni(Vector3(16.4, 2.4, 4.0), Color(0.5, 0.65, 1.0), 1.2, 6.0)
+	# the breach glows candy pink
+	_omni(Vector3(11.5, 1.5, 7.4), Color(1.0, 0.3, 0.6), 2.4, 7.5)
+	_omni(Vector3(15.2, 0.8, 6.4), Color(1.0, 0.3, 0.7), 1.2, 4.5)
+	# magenta from the exit door
+	_omni(Vector3(16.4, 2.4, 4.0), Color(1.0, 0.35, 0.75), 1.2, 6.0)
+	# amber lamps at the foot of the steel wall and the booth
+	for x in [7.0, 11.0, 15.0]:
+		StationLook.wall_lamp(self, Vector3(x, 0, -6.75), Color(1.0, 0.45, 0.15))
 	# low fill raking across the rock walls so the hall reads as cut into stone
 	for p in [Vector3(-14, 1.5, -10), Vector3(-6, 2.0, -11), Vector3(2, 2.0, -11), Vector3(-15, 1.5, 0), Vector3(-15, 1.5, 7)]:
 		_omni(p, Color(1.0, 0.62, 0.38), 0.9, 7.0)
 	var key := DirectionalLight3D.new()
 	key.rotation_degrees = Vector3(-62, -150, 0)
-	key.light_color = Color(0.65, 0.72, 0.95)
-	key.light_energy = 0.45
+	key.light_color = Color(0.85, 0.7, 0.75)
+	key.light_energy = 0.2
 	key.shadow_enabled = true
 	add_child(key)
-
-
-# --------------------------------------------------------------------------
-# Materials
-# --------------------------------------------------------------------------
-
-## A triplanar CC0-textured surface with the cutaway.
-func _surface(tex: String, tint: Color, roughness: float, scale := 0.25) -> ShaderMaterial:
-	var m := ShaderMaterial.new()
-	m.shader = CUTAWAY
-	m.set_shader_parameter("use_textures", true)
-	m.set_shader_parameter("albedo_tex", load(TEX % [tex, "albedo"]))
-	m.set_shader_parameter("normal_tex", load(TEX % [tex, "normal"]))
-	m.set_shader_parameter("arm_tex", load(TEX % [tex, "arm"]))
-	m.set_shader_parameter("tint", tint)
-	m.set_shader_parameter("roughness", roughness)
-	m.set_shader_parameter("metallic", 0.0)
-	m.set_shader_parameter("tex_scale", scale)
-	return m
-
-
-## The cutaway version of an imported material: UV-textured for the AI models, flat colour (or
-## steel-textured, for the station's wall panels) for the kit.
-func _cutaway_of(src: Material) -> Material:
-	if _mats.has(src):
-		return _mats[src]
-	var out: Material = src
-	var std := src as BaseMaterial3D
-	if std:
-		var m := ShaderMaterial.new()
-		m.shader = CUTAWAY
-		m.set_shader_parameter("tint", std.albedo_color)
-		m.set_shader_parameter("roughness", std.roughness)
-		m.set_shader_parameter("metallic", std.metallic)
-		if std.albedo_texture:
-			m.set_shader_parameter("use_textures", true)
-			m.set_shader_parameter("use_uv", true)
-			m.set_shader_parameter("albedo_tex", std.albedo_texture)
-			m.set_shader_parameter("normal_tex", std.normal_texture)
-			m.set_shader_parameter("arm_tex", std.roughness_texture)
-			m.set_shader_parameter("roughness", 0.5)
-			m.set_shader_parameter("metallic", 0.0)
-		elif src.resource_name.begins_with("Wall"):
-			m.set_shader_parameter("use_textures", true)
-			m.set_shader_parameter("albedo_tex", load(TEX % ["metal_plate", "albedo"]))
-			m.set_shader_parameter("normal_tex", load(TEX % ["metal_plate", "normal"]))
-			m.set_shader_parameter("arm_tex", load(TEX % ["metal_plate", "arm"]))
-			m.set_shader_parameter("tint", std.albedo_color * 2.2)
-			m.set_shader_parameter("tex_scale", 0.5)
-		if std.emission_enabled:
-			var e := std.emission
-			m.set_shader_parameter("emission", Vector3(e.r, e.g, e.b))
-			m.set_shader_parameter("emission_energy", std.emission_energy_multiplier)
-		out = m
-	_mats[src] = out
-	return out
-
-
-func _apply_cutaway(n: Node) -> void:
-	for mi in n.find_children("*", "MeshInstance3D", true, false):
-		var m := mi as MeshInstance3D
-		for s in m.mesh.get_surface_count():
-			var src := m.get_surface_override_material(s)
-			if src == null:
-				src = m.mesh.surface_get_material(s)
-			if src and src.resource_name != "SpaceGlass":
-				m.set_surface_override_material(s, _cutaway_of(src))
-
-
-func _always_cut(n: Node) -> void:
-	for mi in n.find_children("*", "MeshInstance3D", true, false):
-		(mi as GeometryInstance3D).set_instance_shader_parameter("always_cut", true)
 
 
 # --------------------------------------------------------------------------
@@ -389,9 +315,9 @@ func _instance(path: String, pos: Vector3, yaw: float, scale: Vector3, low: bool
 	n.rotation.y = yaw
 	n.scale = scale
 	add_child(n)
-	_apply_cutaway(n)
+	StationLook.apply(n)
 	if low:
-		_always_cut(n)
+		StationLook.always_cut(n)
 	return n
 
 
@@ -409,6 +335,20 @@ func _stripe(center: Vector3, size: Vector2) -> void:
 	var m := ShaderMaterial.new()
 	m.shader = HAZARD
 	_plane(size, center, m)
+
+
+## A lamp pointing straight down: a pool of light on the floor.
+func _spot(pos: Vector3, color: Color, energy: float, angle: float) -> void:
+	var l := SpotLight3D.new()
+	l.position = pos
+	l.rotation_degrees = Vector3(-90, 0, 0)
+	l.light_color = color
+	l.light_energy = energy
+	l.spot_range = pos.y + 3.0
+	l.spot_angle = angle
+	l.spot_angle_attenuation = 0.8
+	l.shadow_enabled = true
+	add_child(l)
 
 
 func _omni(pos: Vector3, color: Color, energy: float, range_m: float) -> void:
