@@ -53,7 +53,8 @@ void fragment() {
 	if (always_cut && wpos.y > cut_height) {
 		discard;
 	}
-	if (cut_enabled && wpos.y > cut_height) {
+	// (no player set yet, e.g. in the editor: the global's default y is -1000 and nothing is cut)
+	if (cut_enabled && wpos.y > cut_height && cutaway_player.y > -500.0) {
 		vec2 rel = wpos.xz - cutaway_player.xz;
 		vec2 dir = normalize(cutaway_view.xz + vec2(1e-5));
 		float along = dot(rel, dir);

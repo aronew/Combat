@@ -1,3 +1,4 @@
+@tool
 extends Node3D
 ## Look test 2: an ore-processing hall cut into the rock of the Smile Mine. Judges the enclosed
 ## look (rock on every side, beams overhead), the cutaway (whatever stands between the camera and
@@ -28,7 +29,8 @@ var _steel: ShaderMaterial
 
 
 func _enter_tree() -> void:
-	Game.reset_run()
+	if not Engine.is_editor_hint():
+		Game.reset_run()
 
 
 func _ready() -> void:
@@ -44,6 +46,10 @@ func _ready() -> void:
 	_build_middle()
 	_build_overhead()
 	_build_lights()
+	# the hall is built in the editor too (tool script), so it can be looked at without playing;
+	# nothing built here is saved into the scene file
+	if Engine.is_editor_hint():
+		return
 	if Game.camera_rig:
 		Game.camera_rig.distance = camera_distance
 		Game.camera_rig.pitch_degrees = camera_pitch
@@ -54,7 +60,8 @@ func _ready() -> void:
 
 
 func _process(_delta: float) -> void:
-	_update_cutaway()
+	if not Engine.is_editor_hint():
+		_update_cutaway()
 
 
 ## Tell the cutaway shader where the player is and which way the camera looks at her.
