@@ -295,6 +295,7 @@ func roll() -> void:
 			sw.fading = true
 			sw.fade_t = swing_crossfade * 0.5
 	tree.set("parameters/roll_speed/scale", (ROLL_END - ROLL_START) / roll_time)
+	tree.set("parameters/roll_seek/seek_request", ROLL_START)
 	tree.set("parameters/roll/request", AnimationNodeOneShot.ONE_SHOT_REQUEST_FIRE)
 
 
@@ -581,15 +582,13 @@ func _build_tree() -> void:
 			prev = n
 
 	# Roll: whole body.
-	var roll_clip := _clip(ROLL_CLIP)
-	roll_clip.use_custom_timeline = true
-	roll_clip.start_offset = ROLL_START
-	roll_clip.timeline_length = ROLL_END - ROLL_START
-	roll_clip.stretch_time_scale = false
-	roll_clip.loop_mode = Animation.LOOP_NONE
-	bt.add_node("roll_clip", roll_clip, Vector2(1400, 150))
+	# The roll starts ROLL_START into the clip (a seek, set when it fires): plain nodes that
+	# every Godot 4 version has, so the web editor can run it too.
+	bt.add_node("roll_clip", _clip(ROLL_CLIP), Vector2(1400, 150))
+	bt.add_node("roll_seek", AnimationNodeTimeSeek.new(), Vector2(1500, 150))
+	bt.connect_node("roll_seek", 0, "roll_clip")
 	bt.add_node("roll_speed", AnimationNodeTimeScale.new(), Vector2(1600, 150))
-	bt.connect_node("roll_speed", 0, "roll_clip")
+	bt.connect_node("roll_speed", 0, "roll_seek")
 	var roll_shot := AnimationNodeOneShot.new()
 	roll_shot.fadein_time = 0.03
 	roll_shot.fadeout_time = 0.1
