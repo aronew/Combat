@@ -156,24 +156,33 @@ var _guard_amount := 0.0
 ## True once the model, animation tree and weapons are all set up. The player falls back to
 ## the old body if this is still false after adding it (a missing or broken import).
 var ok := false
+## The setup step reached so far. If setup stops partway (an error on some platform), this
+## says where; the player shows it on screen when it falls back to the placeholder body.
+var stage := "not started"
 
 
 func _ready() -> void:
+	stage = "loading the models"
 	if MODEL == null or RIFLE == null or BLADE == null:
 		push_error("HunterBody: hunter models failed to load (check assets/models/hunter imports)")
 		return
+	stage = "creating the model"
 	_model = MODEL.instantiate()
 	_model.rotation.y = PI  # the model faces +Z; the player faces -Z
 	_model.scale = Vector3.ONE * body_scale
 	add_child(_model)
 	skeleton = _model.find_child("Skeleton3D", true, false)
 	anim = _model.find_child("AnimationPlayer", true, false)
+	stage = "tuning her materials"
 	_tune_materials(_model, use_rim_pass)
 	if fixed_bounds:
 		for m in _model.find_children("*", "MeshInstance3D", true, false):
 			(m as MeshInstance3D).custom_aabb = AABB(Vector3(-1.5, -0.5, -1.5), Vector3(3.0, 3.0, 3.0))
+	stage = "building the animation tree"
 	_build_tree()
+	stage = "fitting the weapons"
 	_fit_weapons()
+	stage = "tuning the weapons"
 	_tune_materials(rifle)
 	_tune_materials(blade)
 	if use_rim_light:
@@ -181,10 +190,12 @@ func _ready() -> void:
 	_use_shadow_proxy()
 	_bone_hips = skeleton.find_bone("Hips")
 	_bone_hand = skeleton.find_bone("RightHand")
+	stage = "reading the sword clips"
 	_cache_swing_tracks()
 	for i in 2:
 		_swings.append({"active": false, "step": 1, "t": 0.0, "contact_in": 0.0, "strike": 0.1,
 			"recover": 0.2, "fading": false, "fade_t": 0.0, "clip_t": 0.0, "seg": 0, "clip": ""})
+	stage = "creating the blade trail"
 	_trail = BladeTrail.new()
 	_trail.name = "BladeTrail"
 	_trail.life = trail_life
@@ -192,6 +203,7 @@ func _ready() -> void:
 	_prev_xf = global_transform
 	set_rifle_mode(true)
 	ok = skeleton != null and tree != null and rifle != null and blade != null and _bone_hand >= 0
+	stage = "done" if ok else "finished, but parts are missing (skeleton %s, tree %s, rifle %s, blade %s, hand bone %s)" % [skeleton != null, tree != null, rifle != null, blade != null, _bone_hand >= 0]
 
 
 # --------------------------------------------------------------------------
@@ -295,6 +307,7 @@ func roll() -> void:
 			sw.fading = true
 			sw.fade_t = swing_crossfade * 0.5
 	tree.set("parameters/roll_speed/scale", (ROLL_END - ROLL_START) / roll_time)
+	tree.set("parameters/roll_seek/seek_request", ROLL_START)
 	tree.set("parameters/roll/request", AnimationNodeOneShot.ONE_SHOT_REQUEST_FIRE)
 
 
@@ -581,15 +594,13 @@ func _build_tree() -> void:
 			prev = n
 
 	# Roll: whole body.
-	var roll_clip := _clip(ROLL_CLIP)
-	roll_clip.use_custom_timeline = true
-	roll_clip.start_offset = ROLL_START
-	roll_clip.timeline_length = ROLL_END - ROLL_START
-	roll_clip.stretch_time_scale = false
-	roll_clip.loop_mode = Animation.LOOP_NONE
-	bt.add_node("roll_clip", roll_clip, Vector2(1400, 150))
+	# The roll starts ROLL_START into the clip (a seek, set when it fires): plain nodes that
+	# every Godot 4 version has, so the web editor can run it too.
+	bt.add_node("roll_clip", _clip(ROLL_CLIP), Vector2(1400, 150))
+	bt.add_node("roll_seek", AnimationNodeTimeSeek.new(), Vector2(1500, 150))
+	bt.connect_node("roll_seek", 0, "roll_clip")
 	bt.add_node("roll_speed", AnimationNodeTimeScale.new(), Vector2(1600, 150))
-	bt.connect_node("roll_speed", 0, "roll_clip")
+	bt.connect_node("roll_speed", 0, "roll_seek")
 	var roll_shot := AnimationNodeOneShot.new()
 	roll_shot.fadein_time = 0.03
 	roll_shot.fadeout_time = 0.1
