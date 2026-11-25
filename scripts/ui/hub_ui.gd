@@ -441,6 +441,7 @@ func _build_contracts() -> void:
 	v.add_child(_btn("TEST LEVEL  (small, one floor)", deploy.bind(d, "classic"), Vector2(0, 40)))
 	v.add_child(_btn("VFX ARENA  (dev: effects test room)", _open_vfx_arena, Vector2(0, 40)))
 	v.add_child(_btn("LOOK TEST  (dev: new station hall)", _open_look_test, Vector2(0, 40)))
+	v.add_child(_btn("LOOK TEST 2  (dev: ore hall in the rock)", _open_look_test_2, Vector2(0, 40)))
 
 
 # ---------------- button handlers ----------------
@@ -507,6 +508,11 @@ func _open_vfx_arena() -> void:
 func _open_look_test() -> void:
 	close()
 	Game.go_to_scene("res://scenes/test/look_test.tscn")
+
+
+func _open_look_test_2() -> void:
+	close()
+	Game.go_to_scene("res://scenes/test/look_test_2.tscn")
 
 
 func _on_depth(d: int) -> void:

@@ -48,7 +48,7 @@ enum Weapon { RIFLE, BLADE }
 @export var barrel_offset := 0.14
 ## Height bolts travel at (gameplay: low cover and short bugs are tuned around it), whatever
 ## height the rifle's muzzle is drawn at.
-@export var bolt_height := 1.1
+@export var bolt_height := 1.2
 ## Use the animated hunter model (false keeps the old placeholder body).
 @export var use_hunter := true
 @export_group("Hunter troubleshooting")

@@ -107,7 +107,7 @@ const BLADE_TIP := Vector3(-0.97, 0.0, 0.0)
 @export var rim_strength := 0.32
 @export var rim_power := 4.0
 ## Heroes are drawn a little larger than life so they read from the high camera.
-@export var body_scale := 1.12
+@export var body_scale := 1.23
 @export_group("Troubleshooting")
 ## Switches for the extras the hunter adds on top of the model, to narrow down a rendering
 ## problem on a particular GPU: untick one at a time and see which one fixes it.
