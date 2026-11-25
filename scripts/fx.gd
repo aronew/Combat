@@ -98,6 +98,22 @@ const CORPSE_LIFE := 4.5
 @export var corpses_enabled := true
 @export var splat_pool_size := 64
 @export var corpse_pool_size := 24
+## Gibs: chitin and ichor chunks thrown out on kills (one batched mesh). How many depends
+## on how it died: executions and explosions burst a bug, a bullet chips a few bits off.
+@export var gibs_enabled := true
+@export var gib_pool_size := 220
+@export var gib_life := 1.4
+const GIBS_BY_KIND := {&"execute": 14, &"explosion": 10, &"counter": 9, &"slash_crit": 7, &"crit": 6,
+	&"slash": 5, &"bullet": 3, &"reflect": 6, &"burn": 2, &"shock": 4}
+var _gib_mm: MultiMesh
+var _gib_vel: PackedVector3Array
+var _gib_spin: PackedVector3Array
+var _gib_pos: PackedVector3Array
+var _gib_rot: PackedVector3Array
+var _gib_size: PackedVector3Array
+var _gib_t: PackedFloat32Array
+var _gib_i := 0
+var _gib_live := 0
 
 
 func _ready() -> void:
@@ -128,6 +144,7 @@ func _ready() -> void:
 	_build_beams()
 	_build_splats()
 	_build_corpses()
+	_build_gibs()
 	_build_vfx()
 
 
@@ -374,6 +391,8 @@ func _build_telegraphs() -> void:
 
 func _process(delta: float) -> void:
 	_tick_trails(delta)
+	if _gib_live > 0:
+		_tick_gibs(delta)
 	for i in _bolts.size():
 		if _bolt_t[i] > 0.0:
 			_bolt_t[i] -= delta
@@ -561,7 +580,13 @@ func _build_corpses() -> void:
 func on_enemy_body(e: Enemy, direction: Vector3, kind: StringName) -> void:
 	var pos := e.global_position
 	var ichor := e.ichor_color
-	splat(pos + Vector3(randf_range(-0.3, 0.3), 0, randf_range(-0.3, 0.3)), Color(ichor.r * 0.55, ichor.g * 0.55, ichor.b * 0.4, 0.8), 1.1 * e._tier_scale)
+	splat(pos + Vector3(randf_range(-0.3, 0.3), 0, randf_range(-0.3, 0.3)), Color(ichor.r * 0.55, ichor.g * 0.55, ichor.b * 0.4, 0.8), 1.1 * e._tier_scale * (1.5 if kind == &"execute" else 1.0))
+	if kind != &"silent" and e.surface_kind == Surface.Kind.ORGANIC:
+		var n := roundi(GIBS_BY_KIND.get(kind, 3) * (1.0 + 0.5 * e.tier) * (0.4 if Graphics.is_low() else 1.0))
+		gibs(pos + Vector3.UP * 0.45 * e._tier_scale, direction, n, ichor, e._tier_scale, 1.6 if kind in [&"execute", &"explosion"] else 1.0)
+		if kind == &"execute":
+			burst(pos + Vector3.UP * 0.5, direction, 1.8 * e._tier_scale, Color("ffd23d"))
+			splat(pos + direction * 1.2, Color(ichor.r * 0.6, ichor.g * 0.6, ichor.b * 0.45, 0.85), 1.6 * e._tier_scale)
 	if not corpses_enabled or e.type_id != &"swarmer" or kind == &"silent" or _corpses.is_empty():
 		return
 	var c := _corpses[_corpse_i]
@@ -569,7 +594,7 @@ func on_enemy_body(e: Enemy, direction: Vector3, kind: StringName) -> void:
 	_corpse_i = (_corpse_i + 1) % _corpses.size()
 	var push := Vector3(direction.x, 0.0, direction.z)
 	push = push.normalized() if push.length_squared() > 0.001 else Vector3(randf() - 0.5, 0, randf() - 0.5).normalized()
-	var power := 9.0 if kind in [&"explosion", &"counter"] else 5.5
+	var power: float = {&"execute": 15.0, &"explosion": 11.0, &"counter": 10.0, &"crit": 8.0, &"slash_crit": 8.0}.get(kind, 5.5)
 	c.global_position = pos
 	c.rotation = Vector3(0, e.visual.rotation.y, 0)
 	c.scale = Vector3.ONE * e._tier_scale
@@ -579,6 +604,87 @@ func on_enemy_body(e: Enemy, direction: Vector3, kind: StringName) -> void:
 	st.t = 0.0
 	st.landed = false
 	st.ichor = ichor
+
+
+## Throw `count` chunks out of `pos`, mostly along `direction`: dark chitin plates and a few
+## glowing ichor bits in the bug's blood colour.
+func gibs(pos: Vector3, direction: Vector3, count: int, ichor: Color, size := 1.0, power := 1.0) -> void:
+	if not gibs_enabled or _gib_mm == null:
+		return
+	var push := Vector3(direction.x, 0.0, direction.z)
+	push = push.normalized() if push.length_squared() > 0.001 else Vector3.ZERO
+	for k in count:
+		var i := _gib_i
+		_gib_i = (_gib_i + 1) % gib_pool_size
+		if _gib_t[i] <= 0.0:
+			_gib_live += 1
+		var spread := Vector3(randf_range(-1.0, 1.0), 0.0, randf_range(-1.0, 1.0)).normalized()
+		_gib_vel[i] = (push * randf_range(2.0, 7.0) + spread * randf_range(1.5, 4.5)) * power + Vector3.UP * randf_range(3.0, 7.5) * sqrt(power)
+		_gib_spin[i] = Vector3(randf_range(-14.0, 14.0), randf_range(-10.0, 10.0), randf_range(-14.0, 14.0))
+		_gib_pos[i] = pos + Vector3(randf_range(-0.2, 0.2), randf_range(-0.1, 0.2), randf_range(-0.2, 0.2)) * size
+		_gib_rot[i] = Vector3(randf() * TAU, randf() * TAU, randf() * TAU)
+		var s := randf_range(0.09, 0.2) * size
+		_gib_size[i] = Vector3(s * randf_range(0.8, 1.8), s * randf_range(0.35, 0.7), s * randf_range(0.7, 1.3))
+		_gib_t[i] = gib_life * randf_range(0.8, 1.2)
+		var glow := randf() < 0.3
+		_gib_mm.set_instance_color(i, Color(ichor.r * 2.2, ichor.g * 2.2, ichor.b * 2.2) if glow else Color(0.16, 0.14, 0.12))
+
+
+func _build_gibs() -> void:
+	_gib_mm = MultiMesh.new()
+	_gib_mm.transform_format = MultiMesh.TRANSFORM_3D
+	_gib_mm.use_colors = true
+	var bm := BoxMesh.new()
+	_gib_mm.mesh = bm
+	_gib_mm.instance_count = gib_pool_size
+	for arr in [_gib_vel, _gib_spin, _gib_pos, _gib_rot, _gib_size]:
+		arr.resize(gib_pool_size)
+	_gib_t.resize(gib_pool_size)
+	var zero := Transform3D(Basis().scaled(Vector3.ZERO), Vector3(0, -500, 0))
+	for i in gib_pool_size:
+		_gib_mm.set_instance_transform(i, zero)
+		_gib_mm.set_instance_color(i, Color.BLACK)
+	var mat := StandardMaterial3D.new()
+	mat.vertex_color_use_as_albedo = true
+	mat.roughness = 0.35
+	mat.metallic = 0.2
+	var mmi := MultiMeshInstance3D.new()
+	mmi.name = "Gibs"
+	mmi.multimesh = _gib_mm
+	mmi.material_override = mat
+	mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	mmi.extra_cull_margin = 16384.0
+	add_child(mmi)
+
+
+func _tick_gibs(delta: float) -> void:
+	var live := 0
+	for i in gib_pool_size:
+		if _gib_t[i] <= 0.0:
+			continue
+		_gib_t[i] -= delta
+		if _gib_t[i] <= 0.0:
+			_gib_mm.set_instance_transform(i, Transform3D(Basis().scaled(Vector3.ZERO), Vector3(0, -500, 0)))
+			continue
+		live += 1
+		var v := _gib_vel[i]
+		var p := _gib_pos[i]
+		v.y -= 24.0 * delta
+		p += v * delta
+		if p.y < 0.03 and v.y < 0.0:
+			# bounce once or twice, then skid to a stop
+			p.y = 0.03
+			v = Vector3(v.x * 0.45, -v.y * 0.28, v.z * 0.45)
+			_gib_spin[i] *= 0.4
+			if absf(v.y) < 0.6:
+				v.y = 0.0
+		_gib_vel[i] = v
+		_gib_pos[i] = p
+		_gib_rot[i] += _gib_spin[i] * delta
+		var shrink := clampf(_gib_t[i] / 0.35, 0.0, 1.0)
+		var b := Basis.from_euler(_gib_rot[i]).scaled(_gib_size[i] * shrink)
+		_gib_mm.set_instance_transform(i, Transform3D(b, p))
+	_gib_live = live
 
 
 func _tick_trails(delta: float) -> void:

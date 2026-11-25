@@ -35,6 +35,9 @@ const ALERT_COLORS := [Color("2fd1c4"), Color("ffd23d"), Color("ff8a1e"), Color(
 @onready var boss_name: Label = $Boss/Name
 @onready var boss_bar: BossBar = $Boss/Bar
 @onready var dash_box: AbilityBox = $Dash/Box
+## The shockwave's square, left of the roll's: fills with energy, solid when it's ready.
+var ability_box: AbilityBox
+var ability_label: Label
 @onready var dash_cd: Label = $Dash/Box/Cooldown
 @onready var dash_key: Label = $Dash/Key
 @onready var kills_label: Label = $Kills
@@ -151,9 +154,27 @@ func _exit_tree() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 
 
+func _build_ability_box() -> void:
+	var src := $Dash as Control
+	var ab := src.duplicate() as Control
+	ab.name = "Ability"
+	ab.offset_left = src.offset_left - 104.0
+	ab.offset_right = src.offset_right - 104.0
+	add_child(ab)
+	ability_box = ab.get_node("Box") as AbilityBox
+	ability_box.ready_color = Color("7ff5ff")
+	ability_box.cooling_color = Color(0.5, 0.96, 1.0, 0.4)
+	ability_label = ab.get_node("Box/Cooldown") as Label
+	(ab.get_node("Key") as Label).text = "F · SHOCKWAVE"
+
+
 func _process(delta: float) -> void:
 	var p := Game.player
 	if p:
+		if ability_box == null:
+			_build_ability_box()
+		ability_box.ratio = clampf(p.energy / p.shock_cost(), 0.0, 1.0)
+		ability_label.text = str(floori(p.energy)) if p.energy < p.shock_cost() else ""
 		dash_box.ratio = p.get_dash_ready_ratio()
 		var left := p.get_dash_cooldown_left()
 		dash_cd.text = "%.1f" % left if left > 0.05 else ""

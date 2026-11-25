@@ -23,6 +23,7 @@ signal mission_ended(success: bool, summary: Dictionary)
 signal loot_picked(item: Dictionary)
 signal level_up(level: int)
 signal blade_chain_changed(count: int)
+signal energy_changed(current: float, maximum: float)
 
 # Scene references (each node registers itself in _ready).
 var player: Player

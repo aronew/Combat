@@ -62,6 +62,50 @@ Elements from stats: **burn** (damage over time), **shock** (arcs to 2 bugs), **
 
 The profile is saved as JSON at `user://combat_profile.json`.
 
+## Strike operations (prototype of the new loop)
+
+Contracts → **Strike operation** (dev flag `--strike`). One generated path you push through
+from start to finish instead of a web of rooms to search: quiet room, arena, quiet room, arena…
+and a final arena at the end. 8 rooms at depth 1–2, 10 at depth 5, plus a side room or two
+with a loot cache for anyone who looks.
+
+- **Arenas seal behind you.** Walk in and energy gates close every doorway; the fight runs
+  until it's clear. Three kinds: **Ambush** (three waves, harder each time, leaping from the
+  void, burrowing up, dropping in), **Infestation** (hive nests spawn bugs until you destroy
+  them) and the **Final stand** (a wave, then a purple elite with escorts and reinforcements).
+- **Clearing a fight** drops the gates and pays out: a guaranteed item (better further in),
+  health, salvage, XP. Then you **pick one of three run upgrades** (below).
+- **Quiet rooms** keep their sleeping, feeding and patrolling bugs, so you can open each
+  stretch with the blade. The director's hunting packs are off in strikes.
+- After the final stand the **exit lift** opens: step on it when you've grabbed your loot.
+- The layout comes from `ComplexGen.generate(..., strike = true)`, the fights from
+  `scripts/strike_run.gd`, the gates from `scripts/objects/energy_gate.gd`.
+
+### Executions, energy and the shockwave
+- **Breaks:** hurt a tough bug (blue tier and up, shield bugs) below 35% and it reels,
+  strobing white. Elites break at 60% and 30%.
+- **Execution:** a blade cut on a broken bug kills it outright (through shields too) and pays
+  **health and 25 energy**, with a burst of gore. On an elite it takes off 22% instead.
+- **Energy** also comes from blade kills (8) and gun kills (2).
+- **Shockwave [F / LB]**, 50 energy: knocks everything around you back and **breaks all of it**,
+  fodder included, for 1.8 s. Shockwave into a crowd, then cut through the broken bugs.
+  The square left of the roll's fills with energy and turns solid when it's ready.
+- Tuning: "Executions & energy" on the Player, "Break" on the enemy scenes.
+
+### Run upgrades
+After every cleared fight but the last, the game pauses on three cards (click, 1–3, or the
+gamepad). They last for that operation only (`scripts/items/run_upgrades.gd`):
+- **Mechanics:** Chain Execution (executions release a small shockwave), Breaker Roll (rolling
+  through bugs breaks them), Overcharge (cheaper, bigger shockwave), Blood Siphon.
+- **Legendary effects** for the run: all eight legendary item effects (Hydra, Ruinmaker,
+  Widowmaker, ...).
+- **Stats:** fire rate, blade damage and reach, crit, burn, arc, speed, health.
+Each offer includes at least one non-stat card while any are left.
+
+### Gore
+Kills throw chitin and glowing ichor gibs (one batched mesh, `FX.gibs`), more for executions and
+explosions, and fling swarmer corpses harder the bigger the hit.
+
 ## The dive: "Deep Descent"
 
 You drop into the Deepworks, a mining complex hanging over the abyss, to steal data from the
@@ -192,6 +236,7 @@ nests (destroy them to cut off spawns).
 | Aim | Mouse | Right stick |
 | Attack (rifle / blade) | Left mouse | Right trigger |
 | Roll (i-frames) | Space or right mouse | A / RB |
+| Shockwave (50 energy) | F | LB |
 | Swap rifle / blade | Q or mouse wheel | Y |
 | Interact | E | X |
 | Map (whole floor) | M | Back |
@@ -323,6 +368,8 @@ godot --path . res://scenes/dive.tscn -- --autoplay --god
 ```
 
 Flags: `--god`, `--stealth` (uses the blade on sleepers), `--blade` (fights with the blade),
+`--strike` (plays a strike operation; the bot shockwaves crowds, shoots nests and takes the
+first upgrade card after `--pick-delay=SECONDS`, default 0.5),
 `--skip-to=uplink` (jumps to the bottom floor), `--depth=N`, `--classic` (the small test level),
 `--seed=N` and `--floor=N` (a specific complex and floor), `--map-at=SECONDS` (opens the map),
 `--gear=legendary|epic|random` (or `legendary:overclock`, `epic:shock` to force one effect;

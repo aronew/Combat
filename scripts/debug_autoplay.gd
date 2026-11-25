@@ -195,6 +195,7 @@ func _process(delta: float) -> void:
 		if _blade and Game.player:
 			print("[autoplay] blade: strikes=%d counters=%d best_chain=%d best_combo=%d" % [
 				Game.player.stat_strikes, Game.player.stat_counters, _best_chain, Game.best_combo])
+		print("[autoplay] executions=%d energy=%d upgrades=%s" % [Game.player.stat_executions, roundi(Game.player.energy), Game.player.run_upgrades.keys()])
 		get_tree().quit()
 	elif _ended and _quit_after <= 0.0 and Game.is_game_over and _go_shot_t < 0.0 and not _capturing and not _test_restart:
 		get_tree().quit()
@@ -284,11 +285,23 @@ func _drive(delta: float) -> void:
 		p.auto_weapon = Player.Weapon.RIFLE
 		p.auto_aim = nearest.global_position
 		p.auto_fire = true
+	elif m.strike and m.strike.is_fighting() and goal != pos and pos.distance_to(goal) < 14.0:
+		# a nest fight: the objective is the nearest nest; shoot it
+		p.auto_weapon = Player.Weapon.RIFLE
+		p.auto_aim = goal + Vector3(0, 0.6, 0)
+		p.auto_fire = true
 	else:
 		p.auto_weapon = Player.Weapon.BLADE if _stealth else Player.Weapon.RIFLE
 		p.auto_fire = false
 		p.auto_aim = pos + (move if move != Vector3.ZERO else p.aim_dir) * 5.0
 
+	# Shockwave when crowded, then the blade cuts the broken bugs down (executions).
+	var close := 0
+	for e in Game.spawner.active:
+		if not e.is_unaware() and pos.distance_to(e.global_position) < 5.0:
+			close += 1
+	if close >= 4 and p.energy >= p.shock_cost():
+		p.auto_ability = true
 	_dash_cd -= delta
 	if nearest and best < 2.4 and _dash_cd <= 0.0:
 		var away := (pos - nearest.global_position).normalized()

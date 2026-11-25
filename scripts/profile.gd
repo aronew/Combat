@@ -26,6 +26,8 @@ var dive_levels := 0
 var last_result := {}
 ## Dive layout: "complex" (generated multi-floor dive) or "classic" (the small test level).
 var dive_layout := "complex"
+## Legendary effects granted for the current run by run upgrades (RunUpgrades): id -> true.
+var run_legendaries := {}
 var dive_seed := 0
 ## Where the dive goes: "deepworks", "starship" or "foundry" (ComplexGen.DESTINATIONS).
 var dive_destination := "deepworks"
@@ -131,7 +133,7 @@ func equipped(slot: String) -> Dictionary:
 
 
 func has_legendary(id: String) -> bool:
-	return id in _stats_cache.get("legendaries", [])
+	return run_legendaries.has(id) or id in _stats_cache.get("legendaries", [])
 
 
 func xp_needed(level: int) -> int:
@@ -253,6 +255,7 @@ func start_dive(depth: int, layout := "", destination := "") -> void:
 	if destination != "":
 		dive_destination = destination
 	dive_seed = randi()
+	run_legendaries.clear()
 	dive_floor = 0
 	dive_floors = ComplexGen.floor_count(dive_depth) if dive_layout == "complex" else 1
 	dive_active = true
@@ -280,6 +283,7 @@ func bank_dive(haul: int) -> Dictionary:
 	dive_bag.clear()
 	dive_active = false
 	dive_carry = {}
+	run_legendaries.clear()
 	last_result = result
 	save()
 	_touch()
@@ -293,6 +297,7 @@ func lose_dive(haul: int) -> Dictionary:
 	dive_bag.clear()
 	dive_active = false
 	dive_carry = {}
+	run_legendaries.clear()
 	last_result = result
 	save()
 	_touch()

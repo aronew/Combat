@@ -97,6 +97,23 @@ enum Weapon { RIFLE, BLADE }
 ## Real seconds of slow-motion after a counter.
 @export var counter_slowmo := 0.32
 
+@export_group("Executions & energy")
+## Energy fuels the shockwave. It comes from fighting up close: blade kills and executions
+## pay the most, gun kills a little.
+@export var max_energy := 100.0
+@export var energy_per_blade_kill := 8.0
+@export var energy_per_gun_kill := 2.0
+@export var energy_per_execution := 25.0
+## An execution (a blade cut on a broken bug) heals this much plus a share of max health.
+@export var execute_heal := 6.0
+@export var execute_heal_ratio := 0.04
+## Shockwave [F / LB]: breaks everything around you (ready to execute) and throws it back.
+@export var shockwave_cost := 50.0
+@export var shockwave_radius := 6.5
+@export var shockwave_damage := 18.0
+@export var shockwave_knockback := 16.0
+@export var shockwave_break_time := 1.8
+
 @export_group("Dash")
 @export var dash_speed := 30.0
 @export var dash_duration := 0.15
@@ -131,6 +148,18 @@ var auto_move := Vector2.ZERO
 var auto_aim := Vector3.ZERO
 var auto_fire := false
 var auto_dash := false
+var auto_ability := false
+var energy := 0.0
+var stat_executions := 0
+## Run upgrades picked this operation (RunUpgrades): id -> times taken, the stats they add on
+## top of your gear, and the mechanics they switch on.
+var run_upgrades := {}
+var run_stats := {}
+var run_flags := {}
+var _roll_broken := {}
+var _wave_fx: MeshInstance3D
+var _wave_mat: ShaderMaterial
+var _wave_t := 0.0
 
 var _fire_cd := 0.0
 var _dash_buffer := 0.0
@@ -279,10 +308,12 @@ func _ready() -> void:
 			body = null
 	_build_ghosts()
 	_build_blade()
+	_build_wave_fx()
 	_setup_body_rig()
 	_apply_weapon_visuals()
 	health_changed.emit(health, max_health)
 	Game.player_health_changed.emit(health, max_health)
+	Game.energy_changed.emit(energy, max_energy)
 
 
 func _physics_process(delta: float) -> void:
@@ -317,6 +348,9 @@ func _physics_process(delta: float) -> void:
 	if Game.camera_rig and not autopilot:  # the bot steers in world space
 		wish = Game.camera_rig.get_flat_basis() * wish
 
+	if _wants_ability():
+		_shockwave()
+
 	# Buffered: a press shortly before the roll is ready still rolls.
 	if _wants_dash():
 		_dash_buffer = input_buffer
@@ -330,6 +364,11 @@ func _physics_process(delta: float) -> void:
 		_tick_strike(delta)
 	elif _dash_t > 0.0:
 		_dash_t -= delta
+		if run_flags.has("breaker_roll") and Game.spawner:
+			for e in Game.spawner.enemies_in_radius(global_position, 1.6):
+				if e.is_active() and not _roll_broken.has(e.get_instance_id()) and e.tier != Enemy.Tier.PURPLE:
+					_roll_broken[e.get_instance_id()] = true
+					e.force_break(1.1)
 		velocity = _dash_dir * dash_speed * (1.4 if Profile.has_legendary("phase_step") else 1.0)
 		_ghost_t -= delta
 		if _ghost_t <= 0.0:
@@ -369,6 +408,12 @@ func _process(delta: float) -> void:
 		_slash_mat.set_shader_parameter("progress", clampf(_slash_age / _slash_dur, 0.0, 1.0))
 		_slash_mat.set_shader_parameter("fade", clampf(_slash_t / slash_linger, 0.0, 1.0))
 		_slash_fx.visible = _slash_t > 0.0
+	if _wave_t > 0.0:
+		_wave_t -= delta
+		var k := 1.0 - _wave_t / 0.32
+		_wave_fx.scale = Vector3.ONE * lerpf(0.2, 1.0, 1.0 - pow(1.0 - k, 3.0)) * float(_wave_fx.get_meta("size", 1.0))
+		_wave_mat.set_shader_parameter("fade", clampf(_wave_t / 0.32, 0.0, 1.0))
+		_wave_fx.visible = _wave_t > 0.0
 	if _streak_t > 0.0:
 		_streak_t -= delta
 		_streak_mat.set_shader_parameter("fade", clampf(_streak_t / 0.2, 0.0, 1.0))
@@ -407,6 +452,16 @@ func _wants_dash() -> bool:
 		auto_dash = false
 		return d
 	return Input.is_action_just_pressed("dash")
+
+
+func _wants_ability() -> bool:
+	if input_locked:
+		return false
+	if autopilot:
+		var a := auto_ability
+		auto_ability = false
+		return a
+	return Input.is_action_just_pressed("ability")
 
 
 func _wants_fire() -> bool:
@@ -733,6 +788,7 @@ func _swing_contact() -> void:
 	var cos_half := cos(deg_to_rad(arc * 0.5))
 	var hits := 0
 	var counters := 0
+	var executions := 0
 	if Game.spawner:
 		for e in Game.spawner.enemies_in_radius(global_position, reach + 0.4):
 			if not e.is_active():
@@ -745,7 +801,10 @@ func _swing_contact() -> void:
 			var edir := to / d if d > 0.01 else dir
 			if d > 0.7 and dir.dot(edir) < cos_half:
 				continue
-			if e.can_be_assassinated(global_position - e.global_position):
+			if e.is_broken():
+				executions += 1
+				e.execute(edir)
+			elif e.can_be_assassinated(global_position - e.global_position):
 				e.assassinate(edir, dmg)
 			elif e.is_counterable():
 				counters += 1
@@ -773,6 +832,18 @@ func _swing_contact() -> void:
 		Game.shake(0.08 if not finisher else 0.2)
 		if Game.director:
 			Game.director.make_noise(global_position, Game.director.blade_noise_radius, Game.director.blade_noise_alert)
+	if executions > 0:
+		stat_executions += executions
+		heal((execute_heal + max_health * execute_heal_ratio) * executions * (1.5 if run_flags.has("siphon") else 1.0))
+		if run_flags.has("exec_nova"):
+			_blast(global_position, 4.5, 12.0, 10.0, 1.4, 0.7)
+		add_energy(energy_per_execution * executions)
+		Game.hitstop(0.1)
+		Game.slowmo(0.16, 0.35)
+		Game.shake(0.35)
+		Audio.play(&"silent_kill", 2.0, 0.85)
+		if Game.fx:
+			Game.fx.text_popup(global_position + Vector3.UP * 2.8, "EXECUTE!" if executions == 1 else "EXECUTE x%d!" % executions, Color("ffd23d"), 1.35)
 	if counters > 0:
 		stat_counters += counters
 		Game.hitstop(0.07)
@@ -967,6 +1038,10 @@ func _update_interact() -> void:
 func load_loadout() -> void:
 	var health_ratio := health / max_health if max_health > 0.0 and health > 0.0 else 1.0
 	stats = Profile.stats()
+	if not run_stats.is_empty():
+		stats = stats.duplicate()
+		for k in run_stats:
+			stats[k] = float(stats.get(k, 0.0)) + float(run_stats[k])
 	gun_item = Profile.equipped("gun")
 	blade_item = Profile.equipped("blade")
 	gun = Loot.gun_profile(gun_item, stats)
@@ -1036,7 +1111,13 @@ func _tick_buffs(delta: float) -> void:
 
 ## Legendary and perk procs on any kill you caused.
 func on_kill(_e: Enemy, pos: Vector3, kind: StringName) -> void:
-	if not kind in [&"bullet", &"crit", &"slash", &"slash_crit", &"counter", &"silent", &"burn", &"shock", &"reflect"]:
+	if kind in [&"slash", &"slash_crit", &"counter", &"silent"]:
+		add_energy(energy_per_blade_kill)
+		if run_flags.has("siphon"):
+			heal(2.0)
+	elif kind in [&"bullet", &"crit"]:
+		add_energy(energy_per_gun_kill)
+	if not kind in [&"bullet", &"crit", &"slash", &"slash_crit", &"counter", &"silent", &"burn", &"shock", &"reflect", &"execute"]:
 		return
 	if Profile.has_legendary("chain_reaction") and kind != &"silent" and randf() < 0.35:
 		Game.delayed_explode(0.08, pos + Vector3.UP * 0.4, 2.6, float(gun.damage) * 1.5, 0.0, 9.0, null, 1.6)
@@ -1047,6 +1128,90 @@ func on_kill(_e: Enemy, pos: Vector3, kind: StringName) -> void:
 	if Profile.has_legendary("adrenal"):
 		_adrenal_stacks = mini(_adrenal_stacks + 1, 5)
 		_adrenal_t = 3.0
+
+
+func add_energy(amount: float) -> void:
+	var before := energy
+	energy = clampf(energy + amount, 0.0, max_energy)
+	if before < shock_cost() and energy >= shock_cost() and amount > 0.0:
+		Audio.play(&"combo_tick", -2.0, 0.7)  # the shockwave is ready
+	Game.energy_changed.emit(energy, max_energy)
+
+
+func shock_cost() -> float:
+	return 35.0 if run_flags.has("overcharge") else shockwave_cost
+
+
+## Shockwave: spend energy, throw back and break everything around you (elites only reel).
+func _shockwave() -> void:
+	if not alive:
+		return
+	if energy < shock_cost():
+		Audio.play(&"ui_click", -6.0, 0.6)
+		return
+	add_energy(-shock_cost())
+	_invuln = maxf(_invuln, 0.3)
+	var origin := global_position
+	_blast(origin, shockwave_radius * (1.2 if run_flags.has("overcharge") else 1.0), shockwave_damage, shockwave_knockback, shockwave_break_time, 1.0)
+	Game.hitstop(0.05)
+	Game.shake(0.5)
+	Audio.play(&"explosion", -2.0, 1.35)
+	Audio.play(&"counter", 0.0, 0.7)
+	if Game.director:
+		Game.director.make_noise(origin, Game.director.explosion_noise_radius * 0.6, Game.director.explosion_noise_alert * 0.5)
+	if body:
+		body.kick(1.2)
+
+
+## A ring blast: damage and knockback falling off with distance, and a break on everything
+## but elites. fx_size scales the ring effect (1 = the shockwave's).
+func _blast(origin: Vector3, radius: float, damage: float, knockback: float, break_time: float, fx_size: float) -> void:
+	if Game.spawner:
+		for e in Game.spawner.enemies_in_radius(origin, radius + 0.5):
+			if not e.is_active():
+				continue
+			var to := e.global_position - origin
+			to.y = 0.0
+			var dir := to.normalized() if to.length() > 0.05 else aim_dir
+			var falloff := 1.0 - clampf(to.length() / (radius + 0.5), 0.0, 0.6)
+			e.take_hit(damage, dir, knockback * falloff, Game.TEAM_PLAYER, &"explosion")
+			if e.is_active() and e.tier != Enemy.Tier.PURPLE:  # elites only reel from the blast
+				e.force_break(break_time)
+	for t in Game.damageables.duplicate():
+		if is_instance_valid(t) and t.is_alive() and t.global_position.distance_to(origin) <= radius + t.hit_radius:
+			t.take_hit(damage * 2.0, (t.global_position - origin).normalized(), 0.0, Game.TEAM_PLAYER, &"explosion")
+	_wave_t = 0.32
+	_wave_fx.global_position = origin + Vector3.UP * 0.25
+	_wave_fx.scale = Vector3.ONE * 0.2 * fx_size
+	_wave_fx.set_meta("size", radius / shockwave_radius)
+	_wave_fx.visible = true
+
+
+func _build_wave_fx() -> void:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var n := 48
+	for i in n:
+		var a0 := TAU * i / n
+		var a1 := TAU * (i + 1) / n
+		var o0 := Vector3(cos(a0), 0, sin(a0)) * shockwave_radius
+		var o1 := Vector3(cos(a1), 0, sin(a1)) * shockwave_radius
+		var i0 := o0 * 0.78
+		var i1 := o1 * 0.78
+		for v in [i0, o0, o1, i0, o1, i1]:
+			st.set_normal(Vector3.UP)
+			st.add_vertex(v)
+	_wave_mat = ShaderMaterial.new()
+	_wave_mat.shader = preload("res://scripts/shaders/neon_fade.gdshader")
+	_wave_mat.set_shader_parameter("tint", Color("7ff5ff"))
+	_wave_mat.set_shader_parameter("energy", 3.2)
+	_wave_fx = MeshInstance3D.new()
+	_wave_fx.mesh = st.commit()
+	_wave_fx.material_override = _wave_mat
+	_wave_fx.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_wave_fx.top_level = true
+	_wave_fx.visible = false
+	add_child(_wave_fx)
 
 
 func _blade_elements(e: Enemy, dealt: float) -> void:
@@ -1074,6 +1239,7 @@ func _cryo_burst() -> void:
 # --------------------------------------------------------------------------
 
 func _start_dash(wish: Vector3) -> void:
+	_roll_broken.clear()
 	_dash_dir = wish.normalized() if wish.length_squared() > 0.01 else aim_dir
 	_dash_t = dash_duration
 	_dash_cd = dash_cooldown

@@ -7,6 +7,8 @@ extends Node3D
 ##   LIFT        stand on the pad while the lift arrives
 ##   COMPLETE    salvage banked   /   FAILED (death): salvage lost
 ## Also spawns the hand-placed population, drives radio chatter and the objective beacon.
+## Strike operations (Level.strike) run differently: StrikeRun handles the fights along the
+## path, then the exit lift opens and stepping on it ends the operation.
 
 enum Phase { INFILTRATE, UPLOAD, EXTRACT, LIFT, COMPLETE, FAILED, DESCEND }
 
@@ -18,6 +20,7 @@ enum Phase { INFILTRATE, UPLOAD, EXTRACT, LIFT, COMPLETE, FAILED, DESCEND }
 @export var elite_at_progress := 0.5
 @export var uplink_salvage := 120
 @export var spawn_population := true
+var strike: StrikeRun
 
 @export_group("Rewards")
 ## XP per kill by enemy tier (normal, blue, gold, purple); scaled by depth.
@@ -79,7 +82,9 @@ func _begin() -> void:
 		lvl.cargo.used.connect(_on_cargo_used)
 		lvl.cargo.set_enabled(lvl.breakers.is_empty())
 	_restore_carry()
-	if lvl.generated:
+	if lvl.strike:
+		_begin_strike(lvl)
+	elif lvl.generated:
 		mission_name = "DEEP DESCENT"
 		sector_name = "DEEPWORKS // SECTOR %d" % Profile.dive_depth
 		var fl := "FLOOR %d / %d" % [Profile.dive_floor + 1, Profile.dive_floors]
@@ -93,9 +98,66 @@ func _begin() -> void:
 		_radio(1.0, "HANDLER", "You're down, Breaker. Uplink's in the reactor ring, three sections deep.")
 		_radio(7.0, "HANDLER", "Hive's asleep. Keep it that way: the blade is quiet, the rifle is not.")
 		_radio(14.0, "HANDLER", "Sleeping bugs die silent if you get the blade in first. [Q] to swap.")
-	_update_floor_objective()
+	if not lvl.strike:
+		_update_floor_objective()
 	Game.mission_phase_changed.emit(phase)
 	Game.haul_changed.emit(haul)
+
+
+func _begin_strike(lvl: Level) -> void:
+	mission_name = "STRIKE"
+	strike = StrikeRun.new()
+	strike.name = "StrikeRun"
+	add_child(strike)
+	strike.setup(lvl)
+	strike.finished.connect(_on_strike_finished)
+	strike.cleared.connect(_on_strike_cleared)
+	for c in lvl.caches:
+		c.used.connect(_on_cache_used.bind(c))
+	if Game.director:
+		Game.director.hunting_packs = false
+	if lvl.exit_lift:
+		lvl.exit_lift.set_state(&"idle")
+	Game.banner.emit("OPERATION: " + lvl.floor_name.to_upper(), "STRIKE  ·  %d FIGHTS  ·  DEPTH %d" % [strike.fights_total(), Profile.dive_depth])
+	_radio(1.0, "HANDLER", "You're in, Breaker. Straight line through %s, and it's crawling." % lvl.floor_name)
+	_radio(7.0, "HANDLER", "Every hot zone seals behind you till it's clear. The way out's at the far end.")
+	_radio(14.0, "HANDLER", "Quiet rooms between: catch them asleep and the blade does it silent.")
+
+
+## After each fight but the last: pick one of three run upgrades (once the loot has landed).
+func _on_strike_cleared(_i: int) -> void:
+	if strike.done:
+		return
+	get_tree().create_timer(1.2).timeout.connect(_offer_upgrade)
+
+
+func _offer_upgrade() -> void:
+	if Game.is_game_over or Game.player == null or not Game.player.alive or strike.is_fighting():
+		return
+	UpgradePicker.offer(self, RunUpgrades.roll(3, Game.player.run_upgrades))
+
+
+func _on_strike_finished() -> void:
+	phase = Phase.EXTRACT
+	data_secured = true
+	var lvl := Game.level
+	if lvl.exit_lift:
+		lvl.exit_lift.set_state(&"ready")
+	Audio.play(&"lift_arrive")
+	Game.banner.emit("OPERATION COMPLETE", "BOARD THE LIFT WHEN YOU'RE READY")
+	_set_objective("Board the lift out")
+	_radio(0.4, "HANDLER", "That's the big one down. Grab what you want, lift's waiting.")
+	Game.mission_phase_changed.emit(phase)
+
+
+func _on_cache_used(_by: Node, c: Interactable) -> void:
+	c.set_enabled(false)
+	Audio.play(&"crate_open")
+	var d := Profile.dive_depth
+	var item := Loot.roll_item(Profile.item_level_for_depth(d), Loot.roll_rarity([0.0, 55.0, 33.0, 12.0]))
+	Game.pickups.drop_item(c.global_position + Vector3(0, 0, 1.6), item)
+	Game.pickups.drop_salvage(c.global_position + Vector3(0.8, 0, 1.0), 20 + 10 * d)
+	Game.banner.emit("CACHE FOUND", "OFF THE BEATEN PATH")
 
 
 func _floor_radio(lvl: Level) -> void:
@@ -216,6 +278,10 @@ func _physics_process(delta: float) -> void:
 			if upload >= 1.0:
 				_upload_done()
 		Phase.EXTRACT:
+			if strike:
+				if Game.level.exit_lift and _flat(p.global_position).distance_to(_flat(Game.level.exit_lift.global_position)) <= Game.level.lift_radius:
+					_complete()
+				return
 			if _flat(p.global_position).distance_to(_flat(Game.level.lift_position)) <= Game.level.lift_radius:
 				phase = Phase.LIFT
 				_lift_t = 0.0
@@ -362,6 +428,10 @@ func _give_xp(amount: int) -> void:
 
 
 func objective_position() -> Vector3:
+	if strike:
+		if phase == Phase.EXTRACT and Game.level.exit_lift:
+			return Game.level.exit_lift.global_position
+		return strike.objective_position()
 	match phase:
 		Phase.INFILTRATE, Phase.UPLOAD:
 			if not Game.level.is_final_floor:

@@ -84,7 +84,29 @@ func spawn_now(type: StringName, mode: StringName, pos: Vector3, opts := {}) -> 
 	var e: Enemy = free.pop_back()
 	active.append(e)
 	e.spawn_at(pos, mode, _depth_opts(opts))
+	# who spawned it (a strike encounter tags its own bugs, see StrikeRun)
+	e.set_meta(&"tag", opts.get("tag", &""))
 	return e
+
+
+## Bugs carrying `tag` that are alive or about to arrive (burrow/drop telegraphs).
+func count_tagged(tag: StringName) -> int:
+	var n := 0
+	for e in active:
+		if e.get_meta(&"tag", &"") == tag:
+			n += 1
+	for p in _pending:
+		if p.opts.get("tag", &"") == tag:
+			n += 1
+	return n
+
+
+func tagged(tag: StringName) -> Array[Enemy]:
+	var out: Array[Enemy] = []
+	for e in active:
+		if e.get_meta(&"tag", &"") == tag:
+			out.append(e)
+	return out
 
 
 ## Deeper dives: tougher, harder-hitting bugs.

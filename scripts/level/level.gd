@@ -77,6 +77,11 @@ var biome := "abyss"
 var layout := {}
 var floor_name := "First Dive"
 var is_final_floor := true
+## A strike operation (one path you push through, see ComplexGen.generate): no breakers,
+## uplink or cargo lift; fights are run by StrikeRun, the way out is `exit_lift`.
+var strike := false
+var exit_lift: ExtractionLift
+var caches: Array[Interactable] = []
 ## Regions the player has seen (minimap fog of war on generated floors).
 var discovered := {}
 
@@ -347,9 +352,12 @@ func _rebuild() -> void:
 	cargo = null
 	breakers.clear()
 	discovered.clear()
-	generated = not Engine.is_editor_hint() and Profile.dive_layout == "complex"
+	generated = not Engine.is_editor_hint() and Profile.dive_layout in ["complex", "strike"]
+	strike = generated and Profile.dive_layout == "strike"
+	caches.clear()
+	exit_lift = null
 	if generated:
-		layout = ComplexGen.new().generate(Profile.dive_seed, Profile.dive_floor, Profile.dive_floors, Profile.dive_depth, Profile.dive_destination)
+		layout = ComplexGen.new().generate(Profile.dive_seed, Profile.dive_floor, Profile.dive_floors, Profile.dive_depth, Profile.dive_destination, strike)
 		rooms = layout.rooms
 		bridges = layout.bridges
 		floor_name = layout.name
@@ -884,7 +892,19 @@ func _build_generated_gameplay() -> void:
 	lift = ExtractionLift.new()
 	_add_obj(lift, lift_position)
 
-	if is_final_floor:
+	if strike:
+		exit_lift = ExtractionLift.new()
+		_add_obj(exit_lift, layout.exit)
+		for c in layout.caches:
+			var cache := Interactable.new()
+			cache.style = &"terminal"
+			cache.prompt = "Open cache"
+			cache.disabled_prompt = ""
+			cache.ready_color = Color("ffc23d")
+			cache.radius = 2.4
+			_add_obj(cache, c.pos, 0.0, 1.0)
+			caches.append(cache)
+	elif is_final_floor:
 		uplink = Interactable.new()
 		uplink.style = &"terminal"
 		uplink.prompt = "Start uplink"

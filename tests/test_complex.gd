@@ -61,6 +61,21 @@ func _initialize() -> void:
 				lvl.queue_free()
 				await process_frame
 	prof.dive_destination = "deepworks"
+	# Strike operations: one path, gated arenas, an exit lift.
+	prof.dive_layout = "strike"
+	for depth in [1, 3, 5]:
+		prof.dive_depth = depth
+		prof.dive_floors = 1
+		prof.dive_floor = 0
+		for s in SEEDS:
+			prof.dive_seed = 9000 + s * 7919
+			var lvl = level_scene.instantiate()
+			root.add_child(lvl)
+			builds += 1
+			_check_floor(lvl, "strike depth %d seed %d" % [depth, prof.dive_seed])
+			lvl.queue_free()
+			await process_frame
+	prof.dive_layout = "complex"
 	var ms := Time.get_ticks_msec() - t0
 	print("classic level walkable area: %d m2" % roundi(classic_area))
 	for d in total_area:
@@ -102,7 +117,25 @@ func _check_floor(lvl, where: String) -> void:
 	for i in lvl.regions.size():
 		if lvl.regions[i].room == &"bridge" and lvl.region_neighbors(i).size() < 2:
 			_fail(where, "catwalk region %d has %d links" % [i, lvl.region_neighbors(i).size()])
-	if lvl.is_final_floor:
+	if lvl.strike:
+		if lvl.exit_lift == null or not lvl.is_walkable(lvl.exit_lift.position):
+			_fail(where, "exit lift missing or off the deck")
+		var encounters: Array = lvl.layout.encounters
+		if encounters.size() < 3:
+			_fail(where, "only %d encounters" % encounters.size())
+		if encounters.is_empty() or encounters[encounters.size() - 1].kind != "final":
+			_fail(where, "no final arena")
+		for e in encounters:
+			var regs := 0
+			for r in lvl.regions:
+				if r.room == e.room:
+					regs += 1
+			if regs == 0:
+				_fail(where, "encounter room %s has no deck" % e.room)
+		for c in lvl.caches:
+			if not lvl.is_walkable(c.position):
+				_fail(where, "cache off the deck at %s" % c.position)
+	elif lvl.is_final_floor:
 		if lvl.uplink == null or not lvl.is_walkable(lvl.uplink_position):
 			_fail(where, "uplink missing or off the deck")
 	else:

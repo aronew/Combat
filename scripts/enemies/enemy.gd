@@ -160,6 +160,22 @@ var _flinch := Vector2.ZERO
 var _flinch_sq := 0.0
 var _stagger_t := 0.0
 
+## Breaks: hurt a tough bug badly enough and it reels, strobing white, wide open. A blade cut
+## on a broken bug is an EXECUTION (Player): it dies on the spot and pays health and energy.
+## Elites break twice and take a big chunk instead of dying. The player's shockwave breaks
+## everything it hits for a moment, fodder included.
+@export_group("Break")
+## Only bugs with at least this much health break from damage (fodder just dies).
+@export var break_min_health := 45.0
+## Health fraction(s) at which it breaks (elites use elite_break_at).
+@export var break_at := 0.35
+@export var elite_break_at: Array[float] = [0.6, 0.3]
+@export var break_time := 2.6
+## Fraction of max health an execution takes off an elite.
+@export var elite_execute_damage := 0.22
+var _broken_t := 0.0
+var _breaks_used := 0
+
 
 func _ready() -> void:
 	_los_query.collision_mask = 1
@@ -265,6 +281,8 @@ func _activate(health_mult: float, speed_mult: float) -> void:
 	_sep = Vector3.ZERO
 	_state_t = 0.0
 	_flash_t = 0.0
+	_broken_t = 0.0
+	_breaks_used = 0
 	_stuck_t = 0.0
 	_detour_t = 0.0
 	_wait = 0.0
@@ -480,6 +498,9 @@ func _physics_process(delta: float) -> void:
 	_state_t += delta
 	_stagger_t = maxf(_stagger_t - delta, 0.0)
 	_update_flinch(delta)
+	if _broken_t > 0.0:
+		_tick_broken(delta)
+		return
 	if _flash_t > 0.0:
 		_flash_t -= delta
 		if _flash_t <= 0.0:
@@ -742,8 +763,11 @@ func take_hit(damage: float, direction: Vector3, knockback: float, _source_team:
 		Game.fx.on_enemy_hit(global_position, dealt, killed, kind, get_instance_id())
 	if killed:
 		_die(push, kind)
-	elif is_unaware() and kind != &"silent":
-		alert(true)
+	else:
+		if is_unaware() and kind != &"silent":
+			alert(true)
+		if kind != &"execute":
+			_check_break()
 	return dealt
 
 
@@ -932,7 +956,63 @@ func _update_flinch(delta: float) -> void:
 
 
 func is_staggered() -> bool:
-	return _stagger_t > 0.0
+	return _stagger_t > 0.0 or _broken_t > 0.0
+
+
+func is_broken() -> bool:
+	return _broken_t > 0.0 and is_active()
+
+
+## Reel for `time` seconds: no moving, no biting, open to an execution.
+func force_break(time: float) -> void:
+	if not is_active() or state == State.EMERGE or state == State.LEAP or state == State.DROP:
+		return
+	if _broken_t <= 0.0:
+		Audio.play_at(&"parry", global_position, -4.0, 0.8 / _tier_scale)
+		if Game.fx:
+			Game.fx.text_popup(global_position + Vector3.UP * (1.4 * _tier_scale), "BREAK", Color("fff27a"), 0.8)
+	_broken_t = maxf(_broken_t, time)
+	if _bite_t >= 0.0:
+		_end_bite()
+	if is_unaware():
+		alert(false)
+
+
+## A blade execution. Returns true if it killed (elites lose a chunk instead).
+func execute(direction: Vector3) -> bool:
+	if not is_active():
+		return false
+	_broken_t = 0.0
+	_set_flash(false)
+	if tier == Tier.PURPLE:
+		take_hit(max_health * elite_execute_damage, direction, 6.0, Game.TEAM_PLAYER, &"execute")
+		return not is_active()
+	take_hit(health + 1.0, direction, 14.0, Game.TEAM_PLAYER, &"execute")
+	return true
+
+
+func _tick_broken(delta: float) -> void:
+	_broken_t -= delta
+	_set_flash(fmod(_broken_t, 0.18) < 0.09 and _broken_t > 0.0)
+	_flinch_sq = maxf(_flinch_sq, 0.25 + 0.15 * sin(_state_t * 20.0))
+	_settle(delta)
+	_update_anim(delta)
+	if _broken_t <= 0.0:
+		_set_flash(false)
+
+
+## Damage-driven break: tough bugs reel when their health crosses the next threshold.
+func _check_break() -> void:
+	if not is_active() or _broken_t > 0.0 or max_health < break_min_health:
+		return
+	var marks: Array[float] = [break_at]
+	if tier == Tier.PURPLE:
+		marks = elite_break_at
+	if _breaks_used >= marks.size():
+		return
+	if health / max_health <= marks[_breaks_used]:
+		_breaks_used += 1
+		force_break(break_time)
 
 
 func _set_flash(on: bool) -> void:

@@ -13,7 +13,7 @@ func _enter_tree() -> void:
 
 
 ## Dive scenes: make sure a dive is running before the Level builds its floor.
-## Dev flags (first load only): --classic (small test level), --seed=N,
+## Dev flags (first load only): --classic (small test level), --strike (a strike operation), --seed=N,
 ## --floor=N (1-based), --depth=N, --skip-to=uplink (jumps to the bottom floor),
 ## --dest=deepworks|starship|foundry.
 func _setup_dive() -> void:
@@ -24,6 +24,8 @@ func _setup_dive() -> void:
 	for arg in OS.get_cmdline_user_args():
 		if arg == "--classic":
 			Profile.dive_layout = "classic"
+		elif arg == "--strike":
+			Profile.dive_layout = "strike"
 		elif arg.begins_with("--dest="):
 			Profile.dive_destination = arg.get_slice("=", 1)
 		elif arg.begins_with("--depth="):

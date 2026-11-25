@@ -90,6 +90,7 @@ const PURPOSES := {
 	"start": ["landing"],
 	"cargo": ["cargo_lift"],
 	"reactor": ["reactor"],
+	"arena": ["loading", "crossroads", "loading"],
 }
 const PURPOSE_NAMES := {
 	"loading": ["Loading Bay", "Freight Yard", "Staging Deck", "Crane Deck"],
@@ -177,29 +178,51 @@ static func theme_for(seed_: int, floor_idx: int, floors: int, dest := "deepwork
 	return themes[posmod(seed_ + floor_idx, themes.size())]
 
 
-func generate(seed_: int, floor_idx: int, floors: int, depth: int, dest := "deepworks") -> Dictionary:
-	rng.seed = hash([seed_, floor_idx, depth, dest])
+## strike: one operation you push through from start to finish instead of a web of rooms to
+## search: a single winding path of beats (a quiet room, then a gated arena, ... then the
+## final arena), with a side room or two holding a loot cache. See _strike_plan.
+func generate(seed_: int, floor_idx: int, floors: int, depth: int, dest := "deepworks", strike := false) -> Dictionary:
+	rng.seed = hash([seed_, floor_idx, depth, dest, strike])
 	if not DESTINATIONS.has(dest):
 		dest = "deepworks"
 	_dest = DESTINATIONS[dest]
 	_biome = _dest.biome
-	var final := floor_idx >= floors - 1
-	var theme := theme_for(seed_, floor_idx, floors, dest)
+	var final := floor_idx >= floors - 1 or strike
+	var theme := theme_for(seed_, 0 if strike else floor_idx, 2 if strike else floors, dest)
 	var n := room_count(depth, floor_idx)
 	var cols := 5 if n <= 12 else 6
 	var rows := 4 if n <= 12 else 5
 
-	_grow(n, cols, rows)
-	var dist := _bfs(0)
+	var path: Array[int] = []
 	var end := 0
-	for i in dist.size():
-		if dist[i] > dist[end]:
-			end = i
-	var path := _path_to(end)
-	for l in _links:
-		l[2] = path.has(l[0]) and path.has(l[1])
-	_add_loops()
+	var dist: Array[int] = []
+	if strike:
+		n = strike_length(depth)
+		cols = 5
+		rows = n
+		_grow_path(n, cols, rows)
+		end = n - 1
+		for i in n:
+			path.append(i)
+		for l in _links:
+			l[2] = true
+		_add_caches(1 if depth < 3 else 2, n)
+		dist = _bfs(0)
+	else:
+		_grow(n, cols, rows)
+		dist = _bfs(0)
+		for i in dist.size():
+			if dist[i] > dist[end]:
+				end = i
+		path = _path_to(end)
+		for l in _links:
+			l[2] = path.has(l[0]) and path.has(l[1])
+		_add_loops()
+	var beats := _strike_plan(n) if strike else {}
 	_pick_interior(theme, end, final)
+	if strike:
+		for i in beats:  # arenas stay out in the open: room to move, and the void to leap from
+			_inside.erase(i)
 
 	_out = {
 		"name": theme.name, "final": final, "floor": floor_idx, "floors": floors, "lamp": theme.lamp,
@@ -211,10 +234,15 @@ func generate(seed_: int, floor_idx: int, floors: int, depth: int, dest := "deep
 		"props": [], "wall_lights": [], "guide_loops": [], "shaft_pipes": [],
 		"uplink": Vector3.INF, "cargo": Vector3.INF, "low_walls": [], "fills": [],
 		"biome": _biome, "destination": dest, "destination_name": _dest.name, "smoke": [],
+		"strike": strike, "encounters": [], "caches": [], "exit": Vector3.INF,
 	}
 	var used_names := {}
 	for i in _cells.size():
 		var role := "start" if i == 0 else ("end" if i == end else "normal")
+		if strike and beats.has(i) and i != end:
+			role = "arena"
+		elif strike and i >= n:
+			role = "cache"
 		var kind := _pick_kind(theme, role, final)
 		if _inside.has(i) and kind == "hole" and rng.randf() < 0.6:
 			kind = "block"
@@ -237,14 +265,22 @@ func generate(seed_: int, floor_idx: int, floors: int, depth: int, dest := "deep
 			_occupied.append(Vector3(p.x, p.y, 3.4))
 
 	_build_fills()
-	_place_specials(end, final, dist, path)
+	if strike:
+		_place_strike(end, path, beats)
+	else:
+		_place_specials(end, final, dist, path)
 	for i in _rooms.size():
 		_dress_room(i, floor_idx, final)
 	for i in _rooms.size():
-		if i != 0:
-			_populate(i, floor_idx, depth, final)
+		if i == 0:
+			continue
+		# strike arenas fill up when you walk in (see StrikeRun); quiet rooms keep their sleepers
+		if strike and (beats.has(i) or i == end):
+			continue
+		_populate(i, floor_idx, depth, final)
 	_hazard_bridges(floor_idx)
-	_roaming_packs(floor_idx, dist)
+	if not strike:
+		_roaming_packs(floor_idx, dist)
 
 	var hive := _rooms[end].center3 as Vector3
 	var best_nests := 0
@@ -381,6 +417,10 @@ func _pick_kind(theme: Dictionary, role: String, final: bool) -> String:
 		return "start"
 	if role == "end":
 		return "reactor" if final else "cargo"
+	if role == "arena":
+		return "arena"
+	if role == "cache":
+		return "cache"
 	var total := 0
 	for k in theme.kinds:
 		total += int(theme.kinds[k])
@@ -403,8 +443,14 @@ func _make_room(i: int, kind: String, role: String, theme: Dictionary, used_name
 			w = rng.randf_range(18.0, 22.0)
 			h = rng.randf_range(16.0, 20.0)
 		"reactor":
-			w = 26.0
-			h = 26.0
+			w = 28.0
+			h = 28.0
+		"arena":
+			w = rng.randf_range(24.0, 29.0)
+			h = rng.randf_range(22.0, 28.0)
+		"cache":
+			w = rng.randf_range(11.0, 14.0)
+			h = rng.randf_range(10.0, 13.0)
 		"plain":
 			w = rng.randf_range(14.0, 25.0)
 			h = rng.randf_range(12.0, 23.0)
@@ -432,7 +478,7 @@ func _make_room(i: int, kind: String, role: String, theme: Dictionary, used_name
 	var c := Vector2(snappedf(cc.x + rng.randf_range(-jx, jx), 0.5), snappedf(cc.y + rng.randf_range(-jz, jz), 0.5))
 	var rect := Rect2(c.x - w * 0.5, c.y - h * 0.5, w, h)
 
-	var purposes: Array = PURPOSES[kind]
+	var purposes: Array = PURPOSES.get(kind, PURPOSES.plain)
 	var purpose: String = purposes[rng.randi_range(0, purposes.size() - 1)]
 	var name_list: Array = PURPOSE_NAMES[purpose]
 	var base: String = name_list[rng.randi_range(0, name_list.size() - 1)]
@@ -446,7 +492,7 @@ func _make_room(i: int, kind: String, role: String, theme: Dictionary, used_name
 	var room := {
 		"id": StringName("r%d" % i), "name": nm, "rect": rect, "role": role, "center3": Vector3(c.x, 0, c.y),
 		"lamp": theme.alt if rng.randf() < 0.3 else theme.lamp, "nests": 0, "side": {},
-		"kind": {"start": "plain", "cargo": "plain", "reactor": "hole"}.get(kind, kind), "tag": kind,
+		"kind": {"start": "plain", "cargo": "plain", "reactor": "hole", "arena": "plain", "cache": "plain"}.get(kind, kind), "tag": kind,
 		"purpose": purpose, "walls": [], "floor_tint": FLOOR_TINTS.get(purpose, _dest.floor_tint),
 		"interior": inside, "cell_rect": Rect2(cc.x - CELL * 0.5, cc.y - CELL * 0.5, CELL, CELL),
 	}
@@ -463,6 +509,12 @@ func _make_room(i: int, kind: String, role: String, theme: Dictionary, used_name
 			room.hole = Rect2(c.x - hs * 0.5, c.y - hs * 0.5, hs, hs)
 		"reactor":
 			room.hole = Rect2(c.x - 5.0, c.y - 5.0, 10.0, 10.0)
+		"arena":
+			# some arenas have a pit in the middle to fight around
+			if rng.randf() < 0.45:
+				var hs := snappedf(rng.randf_range(6.0, 8.0), 0.5)
+				room.hole = Rect2(c.x - hs * 0.5, c.y - hs * 0.5, hs, hs)
+				room.kind = "hole"
 		"split":
 			var sx := snappedf(c.x + rng.randf_range(-2.0, 2.0), 0.5)
 			room.split_x = sx
@@ -1423,3 +1475,139 @@ func _roaming_packs(floor_idx: int, dist: Array[int]) -> void:
 			if not _in_pieces(_rooms[stops[0]], p):
 				p = start
 			_place(&"swarmer", p, &"dormant", Vector2.INF, 0, {"idle": &"roam", "route": route})
+
+
+# ==========================================================================
+# Strike operations (one path you push through)
+# ==========================================================================
+
+## Rooms on a strike's path (start and final arena included).
+static func strike_length(depth: int) -> int:
+	return clampi(8 + (depth - 1) / 2 * 2, 8, 10)
+
+
+## A winding path from the bottom of the grid to the top: mostly forward (north), sometimes
+## sideways, never back, never crossing itself. Each cell links to the one before it.
+func _grow_path(n: int, cols: int, rows: int) -> void:
+	for attempt in 64:
+		_cells.clear()
+		_links.clear()
+		var c := Vector2i(cols / 2, rows - 1)
+		_cells.append(c)
+		var taken := {c: true}
+		var last_side := 0
+		var side_run := 0
+		while _cells.size() < n:
+			var opts: Array = []
+			var north := c + Vector2i(0, -1)
+			if north.y >= 0 and not taken.has(north):
+				opts.append([north, 0, 0.5 if side_run < 2 else 0.9])
+			for sx in [-1, 1]:
+				var sc: Vector2i = c + Vector2i(sx, 0)
+				if sc.x < 0 or sc.x >= cols or taken.has(sc) or (side_run >= 2 and sx == last_side):
+					continue
+				opts.append([sc, sx, 0.25])
+			if opts.is_empty():
+				break
+			var total := 0.0
+			for o in opts:
+				total += o[2]
+			var pick := rng.randf() * total
+			var chosen: Array = opts[0]
+			for o in opts:
+				pick -= o[2]
+				if pick <= 0.0:
+					chosen = o
+					break
+			side_run = side_run + 1 if chosen[1] != 0 and chosen[1] == last_side else (1 if chosen[1] != 0 else 0)
+			last_side = chosen[1]
+			c = chosen[0]
+			taken[c] = true
+			_cells.append(c)
+			_links.append([_cells.size() - 2, _cells.size() - 1, true])
+		if _cells.size() == n:
+			return
+	push_error("ComplexGen: could not grow a strike path of %d rooms" % n)
+
+
+## Dead-end side rooms off the quiet rooms of the path: optional detours with a loot cache.
+func _add_caches(count: int, n: int) -> void:
+	var taken := {}
+	for c in _cells:
+		taken[c] = true
+	var cands: Array[int] = []
+	for i in range(1, n - 1):
+		if i % 2 == 1:  # quiet rooms (arenas are the even beats)
+			cands.append(i)
+	_shuffle(cands)
+	var dirs: Array[Vector2i] = [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1)]
+	for i in cands:
+		if count <= 0:
+			break
+		_shuffle(dirs)
+		for d in dirs:
+			var c := _cells[i] + d
+			if c.x < 0 or c.y < 0 or taken.has(c) or c.x >= 5 or c.y > _cells[0].y:
+				continue
+			taken[c] = true
+			_cells.append(c)
+			_links.append([i, _cells.size() - 1, false])
+			count -= 1
+			break
+
+
+## Which path rooms are fights, and what kind: every other room is an arena (quiet room,
+## arena, quiet room, arena...), the last one the final fight. Returns {room index: kind}.
+func _strike_plan(n: int) -> Dictionary:
+	var plan := {}
+	var kinds := ["purge", "nests", "purge"]
+	_shuffle(kinds)
+	var k := 0
+	for i in range(2, n - 1, 2):
+		plan[i] = kinds[k % kinds.size()]
+		k += 1
+	plan[n - 1] = "final"
+	return plan
+
+
+func _place_strike(end: int, path: Array[int], beats: Dictionary) -> void:
+	var start: Dictionary = _rooms[0]
+	var sc: Vector3 = start.center3
+	_out.arrival = sc
+	_out.player_start = sc + Vector3(0, 0, 0.5)
+	_occupy(Vector2(sc.x, sc.z), 4.5)
+	var beat := 0
+	for i in path:
+		if not beats.has(i):
+			continue
+		var r: Dictionary = _rooms[i]
+		var kind: String = beats[i]
+		_out.encounters.append({"room": r.id, "index": i, "kind": kind, "beat": beat, "center": r.center3, "name": r.name})
+		beat += 1
+		if kind == "nests":
+			for k in rng.randi_range(2, 3):
+				var spot := _free_spot(r, 3.0, 2.5)
+				if spot.is_empty():
+					break
+				_occupy(spot[0], 2.5)
+				_out.nests.append(Vector3(spot[0].x, 0, spot[0].y))
+	# The way out: a lift on the far side of the final arena's pit, from where you came in.
+	var er: Dictionary = _rooms[end]
+	var ec: Vector3 = er.center3
+	var prev: int = path[path.size() - 2]
+	var d := _cells[end] - _cells[prev]
+	var dir := Vector3(d.x, 0, d.y)
+	var hole: Rect2 = er.hole
+	var reach := hole.size.x * 0.5 + ((er.rect as Rect2).size.x - hole.size.x) * 0.25
+	_out.exit = ec + dir * reach
+	_occupy(Vector2(_out.exit.x, _out.exit.z), 3.5)
+	_out.shaft_glows.append({"pos": ec, "size": hole.size.x, "reactor": true})
+	for i in _rooms.size():
+		var r: Dictionary = _rooms[i]
+		if r.tag == "cache":
+			var spot := _free_spot(r, 2.0, 2.0)
+			var p: Vector2 = spot[0] if not spot.is_empty() else Vector2(r.center3.x, r.center3.z)
+			_occupy(p, 2.0)
+			_out.caches.append({"pos": Vector3(p.x, 0, p.y), "room": r.name})
+		elif r.has("hole") and r.tag != "reactor":
+			_out.shaft_glows.append({"pos": r.center3, "size": (r.hole as Rect2).size.x, "reactor": false})

@@ -28,6 +28,9 @@ const LEVEL_NAMES := ["DORMANT", "STIRRING", "HUNTING", "ALARM"]
 @export var scream_alert := 5.0
 
 @export_group("Hunting packs")
+## Off in strike operations: their fights are designed encounters (StrikeRun), not packs
+## that turn up wherever you are.
+@export var hunting_packs := true
 @export var hunt_interval := Vector2(10.0, 14.0)
 @export var hunt_pack_size := Vector2i(2, 4)
 
@@ -152,7 +155,7 @@ func _physics_process(delta: float) -> void:
 			if _quiet_t > decay_delay and alert > 0.0:
 				alert = maxf(alert - decay_rate * delta, 0.0)
 				_update_level()
-			if level >= AlertLevel.HUNTING:
+			if level >= AlertLevel.HUNTING and hunting_packs:
 				_hunt_t -= delta
 				if _hunt_t <= 0.0:
 					_hunt_t = randf_range(hunt_interval.x, hunt_interval.y)
