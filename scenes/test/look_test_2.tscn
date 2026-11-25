@@ -1,0 +1,50 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scripts/test/look_test_2.gd" id="1_look2"]
+[ext_resource type="PackedScene" path="res://scenes/player.tscn" id="4_player"]
+[ext_resource type="PackedScene" path="res://scenes/camera_rig.tscn" id="5_cam"]
+[ext_resource type="PackedScene" path="res://scenes/spawner.tscn" id="6_spawner"]
+[ext_resource type="Script" path="res://scripts/projectile_pool.gd" id="7_pool"]
+[ext_resource type="Script" path="res://scripts/fx.gd" id="8_fx"]
+[ext_resource type="Script" path="res://scripts/pickups.gd" id="10_pickups"]
+
+[sub_resource type="Environment" id="Env_look"]
+background_mode = 1
+background_color = Color(0.012, 0.008, 0.02, 1)
+ambient_light_source = 2
+ambient_light_color = Color(0.32, 0.3, 0.4, 1)
+ambient_light_energy = 0.9
+tonemap_mode = 3
+tonemap_exposure = 1.25
+ssao_enabled = true
+ssao_intensity = 1.6
+glow_enabled = true
+glow_intensity = 0.7
+glow_bloom = 0.04
+glow_hdr_threshold = 1.1
+fog_enabled = true
+fog_light_color = Color(0.06, 0.045, 0.05, 1)
+fog_light_energy = 0.8
+fog_density = 0.012
+
+[node name="LookTest2" type="Node3D"]
+script = ExtResource("1_look2")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Env_look")
+
+[node name="Player" parent="." instance=ExtResource("4_player")]
+
+[node name="CameraRig" parent="." instance=ExtResource("5_cam")]
+target_path = NodePath("../Player")
+
+[node name="Spawner" parent="." instance=ExtResource("6_spawner")]
+
+[node name="Projectiles" type="Node3D" parent="."]
+script = ExtResource("7_pool")
+
+[node name="FX" type="Node3D" parent="."]
+script = ExtResource("8_fx")
+
+[node name="Pickups" type="Node3D" parent="."]
+script = ExtResource("10_pickups")
