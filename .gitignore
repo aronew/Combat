@@ -8,3 +8,6 @@ export_presets.cfg
 # local screenshot dumps from --autoplay
 /screenshots/
 __pycache__/
+
+# Downloaded screenshots and trailer frames used for research (third-party media, not ours to commit)
+research_notes/*/stills/
