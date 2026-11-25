@@ -65,6 +65,13 @@ enum Weapon { RIFLE, BLADE }
 @export var blade_knockback := 5.0
 ## Seconds after a swing during which turret beams from the front are reflected.
 @export var parry_window := 0.25
+## Wind-up: seconds from the press to the blade crossing her front, when the cut hits (and the
+## hitstop, sparks and numbers land with it). Stretched for slower blades. 0 = hit on the press.
+@export var swing_contact_time := 0.07
+@export var finisher_contact_time := 0.1
+## How long the crescent takes to sweep open, and how long it lingers after.
+@export var slash_sweep_time := 0.07
+@export var slash_linger := 0.14
 
 @export_group("Blade flow")
 ## Target assist: swings snap toward the best bug inside this range and cone.
@@ -177,6 +184,14 @@ var _parry_t := 0.0
 var _slash_fx: MeshInstance3D
 var _slash_mat: ShaderMaterial
 var _slash_t := 0.0
+## The crescent's sweep: seconds since it started, and how long it takes to open.
+var _slash_age := 0.0
+var _slash_dur := 0.07
+## A cut that has started but not yet landed (see swing_contact_time).
+var _hit_pending_t := -1.0
+var _hit_dir := Vector3.FORWARD
+var _hit_finisher := false
+var _hit_step := 1
 var _arc_mesh: ArrayMesh
 var _finisher_mesh: ArrayMesh
 var _blade_node: Node3D
@@ -282,6 +297,11 @@ func _physics_process(delta: float) -> void:
 	_combo_t = maxf(_combo_t - delta, 0.0)
 	_face_t = maxf(_face_t - delta, 0.0)
 	_strike_cd = maxf(_strike_cd - delta, 0.0)
+	if _hit_pending_t >= 0.0:
+		_hit_pending_t -= delta
+		if _hit_pending_t <= 0.0:
+			_hit_pending_t = -1.0
+			_swing_contact()
 	if _chain > 0:
 		_chain_t -= delta
 		if _chain_t <= 0.0:
@@ -345,7 +365,9 @@ func _process(delta: float) -> void:
 	_update_ghosts(delta)
 	if _slash_t > 0.0:
 		_slash_t -= delta
-		_slash_mat.set_shader_parameter("fade", clampf(_slash_t / 0.16, 0.0, 1.0))
+		_slash_age += delta
+		_slash_mat.set_shader_parameter("progress", clampf(_slash_age / _slash_dur, 0.0, 1.0))
+		_slash_mat.set_shader_parameter("fade", clampf(_slash_t / slash_linger, 0.0, 1.0))
 		_slash_fx.visible = _slash_t > 0.0
 	if _streak_t > 0.0:
 		_streak_t -= delta
@@ -654,31 +676,59 @@ func _tick_strike(delta: float) -> void:
 		_strike_t = 0.0
 		velocity = _strike_dir * 2.0
 		_show_streak(_strike_from, global_position)
-		_swing(_strike_dir)
+		_swing(_strike_dir, true)  # the dash was the wind-up: cut on arrival
 
 
-## One cut in `dir`: hits everything in the arc, counters bugs mid wind-up.
-func _swing(dir: Vector3) -> void:
+## One cut in `dir`: starts the swing now and lands it at contact (see swing_contact_time).
+## instant: land it right away (a dash-strike arriving; the dash was the wind-up).
+func _swing(dir: Vector3, instant := false) -> void:
+	if _hit_pending_t >= 0.0:  # never drop a cut that has not landed yet
+		_hit_pending_t = -1.0
+		_swing_contact()
 	_combo_step = (_combo_step % 3) + 1 if _combo_t > 0.0 else 1
 	_combo_t = blade_combo_window
 	var finisher := _combo_step == 3
 	_blade_cd = blade_cooldown * (1.5 if finisher else 1.0)
 	_parry_t = parry_window
+	# slower, heavier blades take longer over the same motion
+	var pace := clampf(blade_cooldown / 0.24, 0.8, 1.8)
+	var contact := 0.0 if instant else (finisher_contact_time if finisher else swing_contact_time) * pace
 	_face_dir = dir
-	_face_t = 0.18
-	var arc := blade_finisher_arc_degrees if finisher else blade_arc_degrees
-	var reach := blade_range * (1.15 if finisher else 1.0)
-	var chain_mult := 1.0 + minf(chain_damage_step * _chain, chain_damage_max)
-	var dmg := (blade_finisher_damage if finisher else blade_damage) * chain_mult
-	_show_slash(finisher, dir)
+	_face_t = 0.18 + contact
 	_start_swing_anim(finisher)
 	if body:
-		body.swing(_combo_step)
+		body.swing(_combo_step, contact, pace, _blade_color(finisher))
 	var cleaver := String(blade_item.get("archetype", "mono")) == "cleaver"
 	if finisher:
 		Audio.play(&"blade_finisher", 0.0, 0.85 if cleaver else 1.0)
 	else:
 		Audio.play(&"cleaver_swing" if cleaver else &"blade_swing", 0.0, 1.0 + (_combo_step - 1) * 0.05)
+	_hit_dir = dir
+	_hit_finisher = finisher
+	_hit_step = _combo_step
+	if contact <= 0.0:
+		_swing_contact()
+	else:
+		_hit_pending_t = contact
+
+
+## The blade's colour for this cut (finishers burn hotter).
+func _blade_color(finisher: bool) -> Color:
+	var c := Color(blade.get("color", "19f4ff"))
+	return c.lerp(Color(1.0, 1.0, 1.0), 0.25) if finisher else c
+
+
+## The moment the blade crosses her front: hits everything in the arc, counters bugs mid wind-up.
+func _swing_contact() -> void:
+	if not alive:
+		return
+	var dir := _hit_dir
+	var finisher := _hit_finisher
+	var arc := blade_finisher_arc_degrees if finisher else blade_arc_degrees
+	var reach := blade_range * (1.15 if finisher else 1.0)
+	var chain_mult := 1.0 + minf(chain_damage_step * _chain, chain_damage_max)
+	var dmg := (blade_finisher_damage if finisher else blade_damage) * chain_mult
+	_show_slash(finisher, dir)
 
 	var cos_half := cos(deg_to_rad(arc * 0.5))
 	var hits := 0
@@ -758,15 +808,22 @@ func is_parrying_toward(source: Vector3) -> bool:
 
 func _show_slash(finisher: bool, dir: Vector3) -> void:
 	_slash_fx.mesh = _finisher_mesh if finisher else _arc_mesh
-	_slash_fx.global_position = global_position + Vector3.UP * 1.0
-	_slash_fx.rotation = Vector3(0.0, atan2(-dir.x, -dir.z), 0.0)
-	_slash_fx.scale = Vector3(-1.0 if _combo_step == 2 else 1.0, 1.0, 1.0)
-	var base_c := Color(blade.get("color", "19f4ff"))
-	var c := Color("ff2bd6") if finisher else (base_c if _combo_step == 1 else base_c.lightened(0.35))
-	_slash_mat.set_shader_parameter("tint", c)
+	# Sweeps open the way the blade travels: the cuts alternate direction, and each is tilted
+	# like the blade's path (the first rises to her left, the second comes down from her right).
+	var sweep := body.swing_sweep(_hit_step) if body else (-1.0 if _hit_step == 2 else 1.0)
+	var tilt: float = [-0.18, 0.22, 0.0][clampi(_hit_step, 1, 3) - 1]
+	var yaw := atan2(-dir.x, -dir.z)
+	_slash_fx.global_transform = Transform3D(Basis(Vector3.UP, yaw) * Basis(Vector3.BACK, tilt),
+		global_position + Vector3.UP * (1.0 if not finisher else 0.9))
+	_slash_mat.set_shader_parameter("tint", _blade_color(finisher))
+	_slash_mat.set_shader_parameter("energy", 2.8 if finisher else 2.2)
+	_slash_mat.set_shader_parameter("sweep", sweep)
+	_slash_mat.set_shader_parameter("progress", 0.0)
 	_slash_mat.set_shader_parameter("fade", 1.0)
 	_slash_fx.visible = true
-	_slash_t = 0.16
+	_slash_dur = slash_sweep_time * (1.4 if finisher else 1.0)
+	_slash_age = 0.0
+	_slash_t = _slash_dur + slash_linger
 
 
 ## Neon streak along a dash-strike path.
@@ -836,9 +893,7 @@ func _build_blade() -> void:
 	_arc_mesh = _make_arc(blade_range, blade_arc_degrees)
 	_finisher_mesh = _make_arc(blade_range * 1.15, blade_finisher_arc_degrees)
 	_slash_mat = ShaderMaterial.new()
-	_slash_mat.shader = preload("res://scripts/shaders/neon_fade.gdshader")
-	_slash_mat.set_shader_parameter("energy", 3.5)
-	_slash_mat.set_shader_parameter("edge_softness", 0.0)
+	_slash_mat.shader = preload("res://scripts/shaders/vfx/slash_arc.gdshader")
 	_slash_fx = MeshInstance3D.new()
 	_slash_fx.material_override = _slash_mat
 	_slash_fx.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -861,7 +916,8 @@ func _build_blade() -> void:
 	add_child(_streak)
 
 
-## Flat crescent in front of the player (-Z), thicker in the middle.
+## Flat crescent in front of the player (-Z), thicker in the middle. UV.x runs along the arc
+## from her left end (0) to her right end (1), UV.y from the inner edge (0) to the outer (1).
 func _make_arc(reach: float, arc_deg: float) -> ArrayMesh:
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
@@ -876,9 +932,12 @@ func _make_arc(reach: float, arc_deg: float) -> ArrayMesh:
 		var o1 := Vector3(sin(a1), 0, -cos(a1)) * reach
 		var n0 := Vector3(sin(a0), 0, -cos(a0)) * (reach - 0.8 * w0)
 		var n1 := Vector3(sin(a1), 0, -cos(a1)) * (reach - 0.8 * w1)
-		for v in [n0, o0, o1, n0, o1, n1]:
+		var u0 := float(i) / steps
+		var u1 := float(i + 1) / steps
+		for pv in [[n0, Vector2(u0, 0)], [o0, Vector2(u0, 1)], [o1, Vector2(u1, 1)], [n0, Vector2(u0, 0)], [o1, Vector2(u1, 1)], [n1, Vector2(u1, 0)]]:
 			st.set_normal(Vector3.UP)
-			st.add_vertex(v)
+			st.set_uv(pv[1])
+			st.add_vertex(pv[0])
 	return st.commit()
 
 
