@@ -10,7 +10,9 @@ extends Node3D
 @export_range(30.0, 89.0) var pitch_degrees := 54.0
 ## 45 = the diagonal view from the concept mockups (walkways run corner to corner).
 @export_range(-180.0, 180.0) var yaw_degrees := 45.0
-@export var distance := 25.0
+## Closer than it was (25): the location concepts frame the hero about twice as large, so her
+## animation and the set dressing read. Pull back out if the swarm needs more room.
+@export var distance := 19.5
 @export var fov := 48.0
 
 @export_group("Follow")

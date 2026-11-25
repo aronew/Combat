@@ -75,9 +75,16 @@ under the floors:
 
 | Destination | Setting | Under and around the floors | Set pieces |
 |---|---|---|---|
-| The Deepworks | Mining complex over the abyss | Misty void, giant columns, teal glow far below | Switchgear, servers, containers, tanks |
+| The Deepworks | Mining complex over the abyss | Teal abyss, giant columns and trusses, glow far below | Switchgear, servers, containers, tanks |
 | Derelict Hauler | A hive-infested starship in orbit; almost every room is inside the hull | The ship's lower hull with running lights and engine vents, debris, stars and nebula, a gas giant | Deck pillars with red bands, hull windows onto space, hazard crates, cargo pods |
 | Furnace Chasm | Foundry gantries | A molten lake (cooling crust over glowing seams), iron towers, orange uplight, rising embers | Crucibles and exhaust stacks trailing smoke, furnace pillars, ingot stacks |
+
+Each Deepworks theme has its own surface, after the location concepts in `reference/locations`:
+Upper Decks and the Reactor Core are hex-tiled decks with heavy hull edges and red or amber
+running lights; Pump Works and the Hive Foundry are worn flagstones over stone-block cliffs,
+taken over by magenta growth, hanging vines and moss; the Switchgear Halls stay steel plate.
+The look per theme (`floor`, `skirt`, `strip`, `overgrowth`) is in `THEMES` in `complex_gen.gd`;
+the floor patterns are in `floor.gdshader`, the edges and planting in `level_kit.gd`.
 
 Floor themes: Deepworks (Upper Decks, Switchgear Halls, Pump Works, Hive Foundry, Reactor Core),
 Derelict Hauler (Cargo Spine, Crew Ring, Engineering Deck, Drive Core), Furnace Chasm (Slag Gantries,
@@ -141,6 +148,12 @@ The blade is built to flow from bug to bug:
   goes straight through shield bugs' shields, a moment of slow-motion and a little health back.
 - The 3-hit combo ends in a wide spin. Silent kills on unaware bugs and turret-beam parries
   still work.
+- **Timing:** a cut lands when the blade crosses her front, 70 ms after the press (100 ms for the
+  finisher, longer for heavy blades): the hitstop, sparks and numbers land with the blade. The
+  hunter plays each cut on a time curve (wind-up, whip, follow-through) and only her upper body
+  swings while she runs. A trail ribbon follows the blade and the crescent on the ground sweeps
+  open the way the blade travels. Timing knobs: `swing_contact_time` on the Player, the
+  "Swings" group on HunterBody.
 
 **Health:** green orbs drop from kills (more often from tougher bugs, three from elites, two from
 nests) and drift toward you only while you're hurt. You also recover slowly after about 6 s
@@ -261,7 +274,7 @@ reference/       concept art (ignored by the importer via .gdignore)
 | Mission | uplink duration and zone radius, lift countdown, elite timing, XP and drop chance by tier |
 | Spawner | pool sizes, max alive, spawn warning times, swarm separation |
 | Enemy scenes | health, speed, damage, senses (sight range and cone), shield arc, burst radius, beam timing |
-| HunterBody (`scripts/player/hunter_body.gd`) | clip speeds, swing/roll/hit timing, weapon size and grip, material and rim-glow tuning, hero scale |
+| HunterBody (`scripts/player/hunter_body.gd`) | clip speeds, swing curve (strike, follow-through, crossfade, trail), roll/hit timing, weapon size and grip, material and rim-glow tuning, hero scale |
 | FX | hitstop, shake, damage numbers, VFX registry and pool sizes, which gun uses which muzzle effect |
 | `scenes/vfx/profiles/*.tres` | per-effect colour, intensity, scale, particle count, light, camera feedback (shake, kick, hitstop, distance falloff) |
 | Level | lamp colours per room, hive glow, void fog |

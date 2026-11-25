@@ -39,7 +39,7 @@ extends Node3D
 @export var void_fog_top := -2.5
 ## The void's colour comes from this grey albedo lit by the bluish moonlight
 ## (its volumetric fog energy) and the ambient light; see the WorldEnvironment.
-@export var void_fog_albedo := Color("b6bec6")
+@export var void_fog_albedo := Color("3f8f88")
 ## Keep this black (or very dark): Godot packs fog-volume emission into a small
 ## buffer, and brighter values can overflow into a bright green void.
 @export var void_fog_emission := Color("000000")
@@ -123,6 +123,11 @@ var _blockers: Array[Vector3] = []
 
 ## Per-destination sky, fog, ambient and key light (deep space, furnace glow).
 const BIOME_ENV := {
+	# The Deepworks: a teal abyss glowing up from below, warm lamps on the decks.
+	"abyss": {"background_color": Color("041214"), "ambient_color": Color("3d6466"), "ambient_energy": 0.15,
+		"fog_color": Color("0c3236"), "fog_density": 0.0014, "fog_height": -5.0, "fog_height_density": 0.09,
+		"volumetric_albedo": Color("78c2b9"), "volumetric_emission": Color("041a19"), "volumetric_density": 0.0008,
+		"glow_intensity": 1.05, "saturation": 1.28, "light_color": Color(0.72, 0.95, 1.0), "light_energy": 0.36},
 	"space": {"background_color": Color("02030a"), "ambient_color": Color("6a7aa0"), "ambient_energy": 0.24,
 		"fog_color": Color("140c22"), "fog_density": 0.0006, "fog_height": -80.0, "fog_height_density": 0.0,
 		"volumetric_albedo": Color("a890b8"), "volumetric_emission": Color("12081a"), "volumetric_density": 0.0005,
@@ -370,6 +375,10 @@ func _rebuild() -> void:
 	_kit.lamp_fog_energy = lamp_fog_energy
 	if generated:
 		_kit.lamp_spacing = 11.0
+		_kit.floor_pattern = layout.get("floor_pattern", 0)
+		_kit.skirt = layout.get("skirt", "metal")
+		_kit.strip_color = layout.get("strip", Color("ffae45"))
+		_kit.overgrowth = layout.get("overgrowth", 0.0)
 	_kit.make_materials(hive_center, hive_radius, tile_size)
 	if generated and layout.get("red_rails", false):
 		_kit.rail_top_mat = _kit.mats.rail_red
@@ -630,12 +639,13 @@ func _build_bridges() -> void:
 		if b.get("walled", false):
 			_corridor_walls(r, along_x)
 			continue
+		# catwalks stay light: no heavy edge under their railings
 		if along_x:
-			_kit.rail_run(Vector3(r.position.x, 0, r.position.y), Vector3(r.end.x, 0, r.position.y), Vector3.BACK, lamp_c, i % 2 == 0)
-			_kit.rail_run(Vector3(r.position.x, 0, r.end.y), Vector3(r.end.x, 0, r.end.y), Vector3.FORWARD, lamp_c, i % 2 == 1)
+			_kit.rail_run(Vector3(r.position.x, 0, r.position.y), Vector3(r.end.x, 0, r.position.y), Vector3.BACK, lamp_c, i % 2 == 0, false, false, null, false)
+			_kit.rail_run(Vector3(r.position.x, 0, r.end.y), Vector3(r.end.x, 0, r.end.y), Vector3.FORWARD, lamp_c, i % 2 == 1, false, false, null, false)
 		else:
-			_kit.rail_run(Vector3(r.position.x, 0, r.position.y), Vector3(r.position.x, 0, r.end.y), Vector3.RIGHT, lamp_c, i % 2 == 0)
-			_kit.rail_run(Vector3(r.end.x, 0, r.position.y), Vector3(r.end.x, 0, r.end.y), Vector3.LEFT, lamp_c, i % 2 == 1)
+			_kit.rail_run(Vector3(r.position.x, 0, r.position.y), Vector3(r.position.x, 0, r.end.y), Vector3.RIGHT, lamp_c, i % 2 == 0, false, false, null, false)
+			_kit.rail_run(Vector3(r.end.x, 0, r.position.y), Vector3(r.end.x, 0, r.end.y), Vector3.LEFT, lamp_c, i % 2 == 1, false, false, null, false)
 
 
 ## A walled corridor inside an interior section: a tall wall on the far side
@@ -804,6 +814,7 @@ func _build_generated_rooms() -> void:
 			_:
 				_kit.deck(r, fm)
 				_kit.rails_around(r, openings, lamp_c)
+		_kit.overgrow_room(r, room.get("walls", []) if not interior else [])
 		for side in room.get("walls", []):
 			if interior:
 				continue  # drawn from the wall segments below
