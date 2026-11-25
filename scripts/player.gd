@@ -68,7 +68,8 @@ enum Weapon { RIFLE, BLADE }
 ## Wind-up: seconds from the press to the blade crossing her front, when the cut hits (and the
 ## hitstop, sparks and numbers land with it). Stretched for slower blades. 0 = hit on the press.
 @export var swing_contact_time := 0.07
-@export var finisher_contact_time := 0.1
+## The finisher is a leap and slam: its wind-up is the jump, so it needs a little longer.
+@export var finisher_contact_time := 0.18
 ## How long the crescent takes to sweep open, and how long it lingers after.
 @export var slash_sweep_time := 0.07
 @export var slash_linger := 0.14

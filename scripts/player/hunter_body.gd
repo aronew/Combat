@@ -8,8 +8,8 @@ extends Node3D
 ## pose on top. Roll and hit reactions are short cuts of library moves, sped up to match the
 ## game's timing (see art_src/blender/import_hunter.py).
 ##
-## Sword swings are played straight from the library combo (`sword_combo`) on a time curve of
-## their own instead of at a fixed speed: a short wind-up that eases in, a whip through the
+## Sword swings play a dedicated library move per cut (see SWINGS) on a time curve of their own
+## instead of at a fixed speed: a short wind-up that eases in, a whip through the
 ## strike that crosses her front exactly when the player's hit lands, then a slower follow-
 ## through that blends back out. While she runs, only her upper body swings. Two swing slots
 ## crossfade, so chaining cuts never pops. A ribbon trails the blade through each strike.
@@ -29,12 +29,26 @@ const UPPER_BONES := ["Spine01", "Spine", "neck", "Head", "head_end", "headfront
 ## crosses her front (contact), where the strike ends, and where the follow-through settles.
 ## `sweep` is the direction the blade travels across her front: +1 left to right, -1 right to
 ## left. Found by tracking the blade tip through the clip (fastest frames, angle around her).
+## Each cut names its clip. The first set is the dedicated library moves (right-hand slash,
+## left slash, Sword_Judgment leap-and-slam); COMBO_SWINGS is the original three cuts inside
+## the library combo, kept for comparison (use_new_sword_clips off). Times measured the same way
+## for both: contact is where the blade tip crosses straight ahead of her at full speed.
 const SWINGS := [
-	{"start": 0.58, "contact": 0.735, "strike_end": 0.83, "settle": 0.93, "sweep": 1.0},
-	{"start": 1.36, "contact": 1.51, "strike_end": 1.66, "settle": 1.80, "sweep": -1.0},
-	{"start": 2.02, "contact": 2.225, "strike_end": 2.37, "settle": 2.56, "sweep": 1.0},
+	{"clip": "sword_slash_r", "start": 0.30, "contact": 0.587, "strike_end": 0.73, "settle": 0.80, "sweep": -1.0},
+	# Left_Slash has two passes; this is the second, faster one, which sweeps the other way.
+	{"clip": "sword_slash_l", "start": 1.10, "contact": 1.31, "strike_end": 1.44, "settle": 1.52, "sweep": 1.0},
+	# Starts at lift-off: the wind-up is the leap, contact is the slam, settle is the landing.
+	{"clip": "sword_judgment", "start": 0.62, "contact": 1.03, "strike_end": 1.13, "settle": 1.30, "sweep": 1.0},
 ]
-const SWING_CLIP := "sword_combo"
+const COMBO_SWINGS := [
+	{"clip": "sword_combo", "start": 0.58, "contact": 0.735, "strike_end": 0.83, "settle": 0.93, "sweep": 1.0},
+	{"clip": "sword_combo", "start": 1.36, "contact": 1.51, "strike_end": 1.66, "settle": 1.80, "sweep": -1.0},
+	{"clip": "sword_combo", "start": 2.02, "contact": 2.225, "strike_end": 2.37, "settle": 2.56, "sweep": 1.0},
+]
+## The part of `roll_tight` that is the roll: the dive, the tuck and coming up (clip seconds).
+const ROLL_CLIP := "roll_tight"
+const ROLL_START := 0.30
+const ROLL_END := 1.50
 ## Points on the blade model (its own units, 1.9 m along X, tip at -X) the trail runs between.
 const BLADE_BASE := Vector3(0.1, 0.0, 0.0)
 const BLADE_TIP := Vector3(-0.97, 0.0, 0.0)
@@ -61,6 +75,10 @@ const BLADE_TIP := Vector3(-0.97, 0.0, 0.0)
 @export var trail_energy := 2.6
 @export_group("")
 @export var roll_time := 0.38
+## The dedicated sword clips for the three cuts (off: the three cuts of the library combo).
+@export var use_new_sword_clips := true
+## Blade out: her upper body holds the sword-held guard pose over the legs (like the rifle's aim).
+@export var use_sword_guard := true
 @export var hit_time := 0.35
 ## Weapon fitting. Both models are 1.9 m long as generated; these bring them to size.
 @export var rifle_scale := 0.5
@@ -132,7 +150,9 @@ var _prev_xf := Transform3D.IDENTITY
 var _bone_hips := -1
 var _bone_hand := -1
 ## Track indices of SWING_CLIP per bone (rotation, position), for sampling it off the tree.
-var _swing_tracks: Array[Vector2i] = []
+var _swing_tracks := {}  # clip name -> Array[Vector2i]
+var _bt: AnimationNodeBlendTree
+var _guard_amount := 0.0
 ## True once the model, animation tree and weapons are all set up. The player falls back to
 ## the old body if this is still false after adding it (a missing or broken import).
 var ok := false
@@ -164,7 +184,7 @@ func _ready() -> void:
 	_cache_swing_tracks()
 	for i in 2:
 		_swings.append({"active": false, "step": 1, "t": 0.0, "contact_in": 0.0, "strike": 0.1,
-			"recover": 0.2, "fading": false, "fade_t": 0.0, "clip_t": 0.0, "seg": 0})
+			"recover": 0.2, "fading": false, "fade_t": 0.0, "clip_t": 0.0, "seg": 0, "clip": ""})
 	_trail = BladeTrail.new()
 	_trail.name = "BladeTrail"
 	_trail.life = trail_life
@@ -206,6 +226,8 @@ func _process(delta: float) -> void:
 	# Ease the aimed upper body in and out (it drops during a roll or a swing anyway).
 	_aim_amount = move_toward(_aim_amount, 1.0 if rifle_mode and not _dead else 0.0, delta * 8.0)
 	tree.set("parameters/aim/blend_amount", _aim_amount)
+	_guard_amount = move_toward(_guard_amount, 1.0 if use_sword_guard and not rifle_mode and not _dead else 0.0, delta * 8.0)
+	tree.set("parameters/guard/blend_amount", _guard_amount)
 	if rifle:
 		_kick = move_toward(_kick, 0.0, delta * 7.0)
 		_place_rifle()
@@ -253,13 +275,16 @@ func swing(step: int, contact_in := 0.07, pace := 1.0, color := Color(0.1, 0.95,
 	sw.recover = (finisher_recover_time if finisher else swing_recover_time) * pace
 	_trail_seg += 1
 	sw.seg = _trail_seg
+	sw.clip = String(_cuts()[step - 1].clip)
+	for part in ["up", "lo"]:
+		(_bt.get_node("sw%d_%s_clip" % [_slot, part]) as AnimationNodeAnimation).animation = sw.clip
 	sw.clip_t = _swing_clip_time(sw)
 	_trail.set_look(color, trail_energy * (1.3 if finisher else 1.0), 1.25 if finisher else 1.0)
 
 
 ## Which way the blade sweeps across her front for this cut: +1 left to right, -1 right to left.
 func swing_sweep(step: int) -> float:
-	return SWINGS[clampi(step, 1, 3) - 1].sweep
+	return _cuts()[clampi(step, 1, 3) - 1].sweep
 
 
 func roll() -> void:
@@ -269,7 +294,7 @@ func roll() -> void:
 		if sw.active and not sw.fading:
 			sw.fading = true
 			sw.fade_t = swing_crossfade * 0.5
-	tree.set("parameters/roll_speed/scale", anim.get_animation("roll_fast").length / roll_time)
+	tree.set("parameters/roll_speed/scale", (ROLL_END - ROLL_START) / roll_time)
 	tree.set("parameters/roll/request", AnimationNodeOneShot.ONE_SHOT_REQUEST_FIRE)
 
 
@@ -306,7 +331,7 @@ func revive() -> void:
 ## wind-up (eases in: she gathers, then whips), strike (contact to strike end, eases out) and
 ## follow-through (decelerates into the settle pose).
 func _swing_clip_time(sw: Dictionary) -> float:
-	var s: Dictionary = SWINGS[sw.step - 1]
+	var s: Dictionary = _cuts()[sw.step - 1]
 	var t: float = sw.t
 	var c: float = sw.contact_in
 	if t < c:
@@ -380,7 +405,7 @@ func _emit_trail(sw: Dictionary, prev_clip: float, delta: float) -> void:
 	for j in range(1, steps + 1):
 		var f := float(j) / steps
 		var ct := lerpf(prev_clip, sw.clip_t, f)
-		var pose := _swing_pose(ct)
+		var pose := _swing_pose(sw.clip, ct)
 		# the clip's hand, carried by the hips she actually has this frame (they may be running)
 		var hand := hips_now * pose[0].affine_inverse() * pose[1]
 		var blade_local := sk_local * hand * hx
@@ -389,9 +414,14 @@ func _emit_trail(sw: Dictionary, prev_clip: float, delta: float) -> void:
 		_trail.add_point(xf * BLADE_BASE, xf * BLADE_TIP, sw.seg, (1.0 - f) * delta)
 
 
-## Skeleton-space poses of the hips and right hand at clip time t of SWING_CLIP.
-func _swing_pose(t: float) -> Array[Transform3D]:
-	var a := anim.get_animation(SWING_CLIP)
+func _cuts() -> Array:
+	return SWINGS if use_new_sword_clips else COMBO_SWINGS
+
+
+## Skeleton-space poses of the hips and right hand at time t of a swing clip.
+func _swing_pose(clip: String, t: float) -> Array[Transform3D]:
+	var a := anim.get_animation(clip)
+	var tracks: Array = _swing_tracks[clip]
 	var chain: Array[int] = []
 	var b := _bone_hand
 	while b >= 0:
@@ -401,7 +431,7 @@ func _swing_pose(t: float) -> Array[Transform3D]:
 	var acc := Transform3D.IDENTITY
 	for bone in chain:
 		var local := skeleton.get_bone_rest(bone)
-		var tr := _swing_tracks[bone]
+		var tr: Vector2i = tracks[bone]
 		if tr.x >= 0:
 			local.basis = Basis(a.rotation_track_interpolate(tr.x, t)).scaled(local.basis.get_scale())
 		if tr.y >= 0:
@@ -413,13 +443,19 @@ func _swing_pose(t: float) -> Array[Transform3D]:
 
 
 func _cache_swing_tracks() -> void:
-	var a := anim.get_animation(SWING_CLIP)
 	var skel_path := String(_model.get_path_to(skeleton))
-	_swing_tracks.resize(skeleton.get_bone_count())
-	for b in skeleton.get_bone_count():
-		var path := NodePath("%s:%s" % [skel_path, skeleton.get_bone_name(b)])
-		_swing_tracks[b] = Vector2i(a.find_track(path, Animation.TYPE_ROTATION_3D) if a else -1,
-			a.find_track(path, Animation.TYPE_POSITION_3D) if a else -1)
+	for cut in SWINGS + COMBO_SWINGS:
+		var clip := String(cut.clip)
+		if _swing_tracks.has(clip):
+			continue
+		var a := anim.get_animation(clip)
+		var tracks: Array[Vector2i] = []
+		tracks.resize(skeleton.get_bone_count())
+		for b in skeleton.get_bone_count():
+			var path := NodePath("%s:%s" % [skel_path, skeleton.get_bone_name(b)])
+			tracks[b] = Vector2i(a.find_track(path, Animation.TYPE_ROTATION_3D) if a else -1,
+				a.find_track(path, Animation.TYPE_POSITION_3D) if a else -1)
+		_swing_tracks[clip] = tracks
 
 
 # --------------------------------------------------------------------------
@@ -505,7 +541,14 @@ func _build_tree() -> void:
 	bt.add_node("hit_speed", AnimationNodeTimeScale.new(), Vector2(600, 150))
 	bt.connect_node("hit_speed", 0, "hit_clip")
 	bt.add_node("hit", hit_shot, Vector2(800, 0))
-	bt.connect_node("hit", 0, "aim")
+	# Blade out: the upper body holds the sword-held pose from the sword backpedal clip.
+	var guard := AnimationNodeBlend2.new()
+	_filter_upper(guard, skel_path)
+	bt.add_node("guard_pose", _clip("sword_walk_back"), Vector2(400, 300))
+	bt.add_node("guard", guard, Vector2(600, 0))
+	bt.connect_node("guard", 0, "aim")
+	bt.connect_node("guard", 1, "guard_pose")
+	bt.connect_node("hit", 0, "guard")
 	bt.connect_node("hit", 1, "hit_speed")
 
 	# Blade swings: two slots, each the combo clip held at a time the script sets every frame
@@ -519,7 +562,7 @@ func _build_tree() -> void:
 	for i in 2:
 		for part in ["up", "lo"]:
 			var n := "sw%d_%s" % [i, part]
-			bt.add_node(n + "_clip", _clip(SWING_CLIP), Vector2(800 + 400 * i, 150 + (120 if part == "lo" else 0)))
+			bt.add_node(n + "_clip", _clip(String(_cuts()[0].clip)), Vector2(800 + 400 * i, 150 + (120 if part == "lo" else 0)))
 			bt.add_node("sw%d_seek_%s" % [i, part], AnimationNodeTimeSeek.new(), Vector2(900 + 400 * i, 150))
 			bt.connect_node("sw%d_seek_%s" % [i, part], 0, n + "_clip")
 			var hold := AnimationNodeTimeScale.new()
@@ -538,7 +581,13 @@ func _build_tree() -> void:
 			prev = n
 
 	# Roll: whole body.
-	bt.add_node("roll_clip", _clip("roll_fast"), Vector2(1400, 150))
+	var roll_clip := _clip(ROLL_CLIP)
+	roll_clip.use_custom_timeline = true
+	roll_clip.start_offset = ROLL_START
+	roll_clip.timeline_length = ROLL_END - ROLL_START
+	roll_clip.stretch_time_scale = false
+	roll_clip.loop_mode = Animation.LOOP_NONE
+	bt.add_node("roll_clip", roll_clip, Vector2(1400, 150))
 	bt.add_node("roll_speed", AnimationNodeTimeScale.new(), Vector2(1600, 150))
 	bt.connect_node("roll_speed", 0, "roll_clip")
 	var roll_shot := AnimationNodeOneShot.new()
@@ -565,9 +614,11 @@ func _build_tree() -> void:
 	tree.root_node = tree.get_path_to(_model)
 	tree.anim_player = tree.get_path_to(anim)
 	tree.tree_root = bt
+	_bt = bt
 	tree.active = true
 	tree.set("parameters/loco_speed/scale", 1.0)
 	tree.set("parameters/aim/blend_amount", 1.0)
+	tree.set("parameters/guard/blend_amount", 0.0)
 	tree.set("parameters/life/transition_request", "alive")
 	for i in 2:
 		for part in ["up", "lo"]:
