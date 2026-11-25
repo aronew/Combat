@@ -158,8 +158,8 @@ func _build_ability_box() -> void:
 	var src := $Dash as Control
 	var ab := src.duplicate() as Control
 	ab.name = "Ability"
-	ab.offset_left = src.offset_left - 104.0
-	ab.offset_right = src.offset_right - 104.0
+	ab.offset_left = src.offset_left - 156.0
+	ab.offset_right = src.offset_right - 156.0
 	add_child(ab)
 	ability_box = ab.get_node("Box") as AbilityBox
 	ability_box.ready_color = Color("7ff5ff")
